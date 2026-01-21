@@ -1,0 +1,340 @@
+{
+  "id": 38915,
+  "type": 0,
+  "time": 1732100105998,
+  "firmware": 6680,
+  "extendedFirmware": 12032,
+  "evoFirmware": 12032,
+  "vendorFirmware": 261,
+  "vendorFirmwareType": "SABB",
+  "board": 51969,
+  "vendor": "LEDsGO",
+  "vendorID": 24,
+  "model": "Winsol Lamel Standard V4.1 TA16 180-3500N",
+  "mode": "EXT/Elements",
+  "hasPushButton": false,
+  "hasRotarySwitch": false,
+  "hasSmartSwitch": false,
+  "hasModes": true,
+  "hasStartupState": true,
+  "hasPresenceSensor": false,
+  "hasLightSensor": false,
+  "hasDaylightControl": false,
+  "owner": 0,
+  "readOnlyLength": 28,
+  "stateLength": 5,
+  "stateMode": 23,
+  "module": 5419,
+  "pushButtonCount": 0,
+  "profiles": [
+    36649,
+    36620,
+    36621,
+    36622
+  ],
+  "controls": [
+    {
+      "type": "sensorgroup",
+      "name": "",
+      "offset": 0,
+      "length": 4,
+      "default": 0,
+      "readonly": true
+    },
+    {
+      "type": "sensor",
+      "name": "Temperatuur",
+      "unit": "°C",
+      "offset": 4,
+      "length": 0,
+      "min": 0,
+      "max": 255,
+      "default": 0,
+      "readonly": true,
+      "ui": true,
+      "tag": 0,
+      "valueType": 0
+    },
+    {
+      "type": "sensor",
+      "name": "#Overcurrent",
+      "unit": "",
+      "offset": 4,
+      "length": 0,
+      "min": 0,
+      "max": 0,
+      "default": 0,
+      "readonly": true,
+      "ui": true,
+      "tag": 1,
+      "valueType": 0
+    },
+    {
+      "type": "sensor",
+      "name": "Travel Distance",
+      "unit": "",
+      "offset": 4,
+      "length": 0,
+      "min": 0,
+      "max": 0,
+      "default": 0,
+      "readonly": true,
+      "ui": true,
+      "tag": 2,
+      "valueType": 0
+    },
+    {
+      "type": "sensor",
+      "name": "Module State",
+      "unit": "",
+      "offset": 4,
+      "length": 0,
+      "min": 0,
+      "max": 255,
+      "default": 0,
+      "readonly": true,
+      "ui": true,
+      "tag": 3,
+      "valueType": 0
+    },
+    {
+      "type": "sensorgroupvalue",
+      "name": "",
+      "offset": 4,
+      "length": 24,
+      "default": 0,
+      "readonly": true
+    },
+    {
+      "type": "slider",
+      "name": "$pos",
+      "unit": "°",
+      "offset": 28,
+      "length": 8,
+      "min": 0,
+      "max": 142,
+      "default": 255,
+      "readonly": false,
+      "valueType": 1,
+      "flags": 0
+    },
+    {
+      "type": "onoff",
+      "name": "$startstop",
+      "offset": 36,
+      "length": 1,
+      "default": 0,
+      "readonly": false,
+      "flags": 22
+    }
+  ],
+  "parameters": [
+    {
+      "tag": 8,
+      "valueType": 0,
+      "direction": 0,
+      "length": 8,
+      "name": "Orientation",
+      "unit": "",
+      "minValue": "",
+      "maxValue": "",
+      "value": "1",
+      "options": [
+        {
+          "value": "1",
+          "label": "North"
+        },
+        {
+          "value": "2",
+          "label": "North-East"
+        },
+        {
+          "value": "3",
+          "label": "East"
+        },
+        {
+          "value": "4",
+          "label": "South-East"
+        },
+        {
+          "value": "5",
+          "label": "South"
+        },
+        {
+          "value": "6",
+          "label": "South-West"
+        },
+        {
+          "value": "7",
+          "label": "West"
+        },
+        {
+          "value": "8",
+          "label": "North-West"
+        }
+      ]
+    },
+    {
+      "tag": 10,
+      "valueType": 0,
+      "direction": 0,
+      "length": 16,
+      "name": "Current Limit",
+      "unit": "mA",
+      "minValue": "",
+      "maxValue": "5000",
+      "value": "5000",
+      "options": []
+    },
+    {
+      "tag": 11,
+      "valueType": 0,
+      "direction": 0,
+      "length": 8,
+      "name": "Zero Motor",
+      "unit": "",
+      "minValue": "",
+      "maxValue": "",
+      "value": "1",
+      "options": [
+        {
+          "value": "1",
+          "label": "Normal mode"
+        },
+        {
+          "value": "2",
+          "label": "Zero Motor"
+        }
+      ]
+    },
+    {
+      "tag": 12,
+      "valueType": 0,
+      "direction": 0,
+      "length": 8,
+      "name": "Sensor ID",
+      "unit": "",
+      "minValue": "0",
+      "maxValue": "200",
+      "value": "7",
+      "options": []
+    },
+    {
+      "tag": 13,
+      "valueType": 0,
+      "direction": 0,
+      "length": 8,
+      "name": "Temperature Sensor Enable",
+      "unit": "",
+      "minValue": "",
+      "maxValue": "",
+      "value": "1",
+      "options": [
+        {
+          "value": "1",
+          "label": "Enable"
+        },
+        {
+          "value": "2",
+          "label": "Disable"
+        }
+      ]
+    },
+    {
+      "tag": 14,
+      "valueType": 0,
+      "direction": 0,
+      "length": 8,
+      "name": "Service Mode",
+      "unit": "",
+      "minValue": "",
+      "maxValue": "",
+      "value": "1",
+      "options": [
+        {
+          "value": "1",
+          "label": "On"
+        },
+        {
+          "value": "2",
+          "label": "Off"
+        }
+      ]
+    },
+    {
+      "tag": 15,
+      "valueType": 0,
+      "direction": 0,
+      "length": 8,
+      "name": "Motor Direction",
+      "unit": "",
+      "minValue": "",
+      "maxValue": "",
+      "value": "1",
+      "options": [
+        {
+          "value": "1",
+          "label": "Left"
+        },
+        {
+          "value": "2",
+          "label": "Right"
+        }
+      ]
+    },
+    {
+      "tag": 19,
+      "valueType": 0,
+      "direction": 0,
+      "length": 8,
+      "name": "Error Step Percentage",
+      "unit": "%",
+      "minValue": "0",
+      "maxValue": "10",
+      "value": "5",
+      "options": []
+    }
+  ],
+  "pushButtons": [],
+  "strings": {
+    "$pos": {
+      "de": "Position der Lamellen",
+      "en": "Louvre Position",
+      "fr": "Position des louvres",
+      "nl": "Lamel Positie"
+    },
+    "$startstop": {
+      "de": "Start/Stopp",
+      "en": "Start/Stop",
+      "fr": "Commencer/Arrêter",
+      "nl": "Start/Stop"
+    },
+    "$temp": {
+      "de": "Kalt/Warm",
+      "en": "Cool/Warm",
+      "fr": "Froid/Chaud",
+      "nl": "Koud/Warm"
+    },
+    "$auto": {
+      "de": "Automatisch",
+      "en": "Automatic",
+      "fr": "Automatique",
+      "nl": "Automatisch"
+    },
+    "$intel": {
+      "de": "Intelligent",
+      "en": "Intelligent",
+      "fr": "Intelligent",
+      "nl": "Intelligent"
+    },
+    "$control_dimmer": {
+      "de": "Schatten/Sonne",
+      "en": "Shadow/Sun",
+      "fr": "Ombre/soleil",
+      "nl": "Schaduw/Zon"
+    }
+  },
+  "hasTW": false,
+  "daliAddressing": "Device",
+  "extifNetworkControlEnabled": true
+}

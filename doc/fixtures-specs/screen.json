@@ -1,0 +1,235 @@
+{
+  "id": 27814,
+  "type": 0,
+  "time": 1683632359810,
+  "firmware": 6680,
+  "extendedFirmware": 12032,
+  "evoFirmware": 12032,
+  "vendorFirmware": 265,
+  "vendorFirmwareType": "SABI",
+  "board": 51969,
+  "vendor": "LEDsGo",
+  "vendorID": 24,
+  "model": "SO! V4.1",
+  "mode": "EXT/1ch/Dim",
+  "hasPushButton": true,
+  "hasRotarySwitch": false,
+  "hasSmartSwitch": false,
+  "hasModes": true,
+  "hasStartupState": true,
+  "hasPresenceSensor": false,
+  "hasLightSensor": false,
+  "hasDaylightControl": false,
+  "owner": 0,
+  "readOnlyLength": 28,
+  "stateLength": 5,
+  "stateMode": 0,
+  "module": 5750,
+  "pushButtonCount": 1,
+  "profiles": [
+    27815,
+    27816
+  ],
+  "controls": [
+    {
+      "type": "sensorgroup",
+      "name": "",
+      "offset": 0,
+      "length": 4,
+      "default": 0,
+      "readonly": true
+    },
+    {
+      "type": "sensor",
+      "name": "Time Up",
+      "unit": "ms",
+      "offset": 4,
+      "length": 0,
+      "min": 0,
+      "max": 300000,
+      "default": 0,
+      "readonly": true,
+      "ui": true,
+      "tag": 0,
+      "valueType": 0
+    },
+    {
+      "type": "sensor",
+      "name": "Time Down",
+      "unit": "ms",
+      "offset": 4,
+      "length": 0,
+      "min": 0,
+      "max": 300000,
+      "default": 0,
+      "readonly": true,
+      "ui": true,
+      "tag": 1,
+      "valueType": 0
+    },
+    {
+      "type": "sensorgroupvalue",
+      "name": "",
+      "offset": 4,
+      "length": 24,
+      "default": 0,
+      "readonly": true
+    },
+    {
+      "type": "dimmer",
+      "offset": 28,
+      "length": 8,
+      "default": 255,
+      "readonly": false
+    },
+    {
+      "type": "onoff",
+      "name": "$toggle",
+      "offset": 36,
+      "length": 1,
+      "default": 0,
+      "readonly": false,
+      "flags": 0
+    }
+  ],
+  "parameters": [
+    {
+      "tag": 0,
+      "valueType": 0,
+      "direction": 0,
+      "length": 16,
+      "name": "Idle",
+      "unit": "ms",
+      "minValue": "0",
+      "maxValue": "10000",
+      "value": "200",
+      "options": []
+    },
+    {
+      "tag": 1,
+      "valueType": 0,
+      "direction": 0,
+      "length": 16,
+      "name": "Back Impulse",
+      "unit": "ms",
+      "minValue": "0",
+      "maxValue": "10000",
+      "value": "30",
+      "options": []
+    },
+    {
+      "tag": 2,
+      "valueType": 0,
+      "direction": 0,
+      "length": 8,
+      "name": "Operation Mode",
+      "unit": "",
+      "minValue": "",
+      "maxValue": "",
+      "value": "1",
+      "options": [
+        {
+          "value": "1",
+          "label": "Normal"
+        },
+        {
+          "value": "2",
+          "label": "Calibration"
+        }
+      ]
+    },
+    {
+      "tag": 3,
+      "valueType": 0,
+      "direction": 0,
+      "length": 8,
+      "name": "Motor Direction",
+      "unit": "",
+      "minValue": "",
+      "maxValue": "",
+      "value": "1",
+      "options": [
+        {
+          "value": "1",
+          "label": "Left"
+        },
+        {
+          "value": "2",
+          "label": "Right"
+        }
+      ]
+    },
+    {
+      "tag": 4,
+      "valueType": 0,
+      "direction": 0,
+      "length": 8,
+      "name": "Sensor ID",
+      "unit": "",
+      "minValue": "0",
+      "maxValue": "255",
+      "value": "7",
+      "options": []
+    },
+    {
+      "tag": 6,
+      "valueType": 0,
+      "direction": 0,
+      "length": 8,
+      "name": "Service Mode",
+      "unit": "",
+      "minValue": "",
+      "maxValue": "",
+      "value": "1",
+      "options": [
+        {
+          "value": "1",
+          "label": "On"
+        },
+        {
+          "value": "2",
+          "label": "Off"
+        }
+      ]
+    },
+    {
+      "tag": 7,
+      "valueType": 0,
+      "direction": 0,
+      "length": 8,
+      "name": "Rain Sensor",
+      "unit": "",
+      "minValue": "",
+      "maxValue": "",
+      "value": "2",
+      "options": [
+        {
+          "value": "1",
+          "label": "Yes"
+        },
+        {
+          "value": "2",
+          "label": "No"
+        }
+      ]
+    }
+  ],
+  "pushButtons": [],
+  "strings": {
+    "$toggle": {
+      "de": "Umschaltknopf",
+      "en": "Toggle Button",
+      "fr": "Bouton à bascule",
+      "nl": "Schakelknop"
+    },
+    "$control_dimmer": {
+      "de": "Schirmposition",
+      "en": "Screen Position",
+      "fr": "position de l'écran",
+      "nl": "Scherm Positie"
+    }
+  },
+  "hasTW": false,
+  "daliAddressing": "Device",
+  "extifNetworkControlEnabled": true
+}
