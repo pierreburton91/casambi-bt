@@ -2,7 +2,7 @@ import logging
 import platform
 
 from bleak import BleakScanner
-from bleak.backends.client import BLEDevice
+from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError, BleakError
 
 from ._constants import CASA_UUID
