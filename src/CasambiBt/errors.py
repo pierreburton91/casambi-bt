@@ -72,6 +72,10 @@ class UnsupportedProtocolVersion(CasambiBtError):
 
 
 class ReadOnlyControlError(CasambiBtError):
-    """Exception that is raised when attempting to set a read-only control."""
+    """Exception raised when attempting to write a control that cannot be changed.
+
+    This is typically raised when calling ``Casambi.setControl()`` with a ``UnitControlType.SENSOR``
+    or any other read-only control supported by the target unit.
+    """
 
     pass

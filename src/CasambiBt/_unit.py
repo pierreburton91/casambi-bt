@@ -49,7 +49,12 @@ class UnitControlType(Enum):
 
 @unique
 class DeviceRole(Enum):
-    """Semantic classification of a device based on its capabilities."""
+    """Semantic classification of a device based on its available controls.
+
+    This enum is used to distinguish lights, motorized devices, and read-only sensors.
+    The role is inferred from the `UnitType.controls` list and is intended for
+    consumer-facing filtering and device discovery.
+    """
 
     LIGHT = 0
     """A light fixture with dimmer and optional color controls."""
