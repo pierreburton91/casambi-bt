@@ -397,9 +397,15 @@ class Unit:
                 x, y = state.xy
                 xyMask = 2**coordLen - 1
                 scaledValue = (round(x * xyMask) << coordLen) | round(y * xyMask)
-            elif c.type == UnitControlType.SLIDER and state.slider is not None:
-                scale = UnitState.SLIDER_RESOLUTION - c.length
-                scaledValue = state.slider >> scale
+            elif (
+                c.type == UnitControlType.SLIDER
+                and state.slider is not None
+                and c.min is not None
+                and c.max is not None
+            ):
+                clampedSlider = min(c.max, max(c.min, state.slider))
+                sliderMask = 2**c.length - 1
+                scaledValue = (sliderMask * (clampedSlider - c.min)) // (c.max - c.min)
             elif c.type == UnitControlType.ONOFF and state.onoff is not None:
                 scaledValue = 1 if state.onoff else 0
 
@@ -492,8 +498,12 @@ class Unit:
                 x = (cInt >> coordLen) & xyMask
                 self._state.xy = (x / xyMask, y / xyMask)
             elif c.type == UnitControlType.SLIDER:
-                scale = UnitState.SLIDER_RESOLUTION - c.length
-                self._state.slider = cInt << scale
+                if not c.max or not c.min:
+                    _LOGGER.warning("Can't set slider when min or max unknown.")
+                    continue
+                sliderRange = c.max - c.min
+                sliderMask = 2**c.length - 1
+                self._state.slider = int(((cInt / sliderMask) * sliderRange) + c.min)
             elif c.type == UnitControlType.ONOFF:
                 self._state.onoff = cInt != 0
             elif c.type == UnitControlType.UNKOWN:

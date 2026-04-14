@@ -67,15 +67,17 @@ elif c.type == UnitControlType.TEMPERATURE and ... c.min and c.max:
 
 ## Implementation Steps (15 grouped into 6 phases, starting with critical bug fix)
 
-### **Phase 0: Critical Bug Fix** (1 step)
+### **Phase 0: Critical Bug Fix** (1 step) ✅ DONE
 
-**0. Fix SLIDER min/max encoding** in `src/CasambiBt/_unit.py` (both `getStateAsBytes()` and `setStateFromBytes()`)
+**0. ✅ DONE - Fix SLIDER min/max encoding** in `src/CasambiBt/_unit.py` (both `getStateAsBytes()` and `setStateFromBytes()`)
 
 - Apply linear min/max mapping identical to TEMPERATURE implementation
 - **Encoding** (state → bytes): `scaledValue = (mask * (value - min)) // (max - min)`
 - **Decoding** (bytes → state): `value = (scaledInt / mask) * (max - min) + min`
 - Add test to verify louvers full range encodes correctly
 - **Priority**: Do this first; it's a correctness bug affecting all sliders with min/max bounds
+
+**Completed**: Updated SLIDER encoding/decoding in `_unit.py` to apply linear scaling. Created test validation in `test_slider_minmax.py`.
 
 ### **Phase 1: Semantic Clarification** (4 steps)
 
