@@ -21,6 +21,9 @@ def test_slider_encoding_with_minmax():
         readonly=False,
         min=0,
         max=142,
+        name="$pos",
+        unit="°",
+        localized_names={"en": "Louvre Position", "de": "Position der Lamellen"},
     )
     
     louver_type = UnitType(

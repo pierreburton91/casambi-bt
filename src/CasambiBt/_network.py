@@ -362,6 +362,14 @@ class Network:
                 )
                 type = UnitControlType.UNKOWN
 
+            name = controlJson.get("name", "")
+            unit = controlJson.get("unit", "")
+            
+            # Extract localized names if `name` is found in `strings`.
+            localized_names = None
+            if "strings" in unitTypeJson and name in unitTypeJson["strings"]:
+                localized_names = unitTypeJson["strings"][name]
+
             controlObj = UnitControl(
                 type,
                 controlJson["offset"],
@@ -370,6 +378,9 @@ class Network:
                 controlJson["readonly"],
                 controlJson.get("min", None),
                 controlJson.get("max", None),
+                name,
+                unit,
+                localized_names,
             )
 
             controls.append(controlObj)

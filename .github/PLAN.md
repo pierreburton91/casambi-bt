@@ -105,12 +105,12 @@ elif c.type == UnitControlType.TEMPERATURE and ... c.min and c.max:
 
 7. **✅ DONE - Add sensor command rejection tests** `tests/test_sensor_commands.py`
 
-### **Phase 3: Device Classification Metadata** (2 steps)
+### **Phase 3: Device Classification Metadata** (2 steps) ✅ DONE
 
-8. **Implement `device_role` heuristic** in `src/CasambiBt/_unit.py`
+8. **✅ DONE - Implement `device_role` heuristic** in `src/CasambiBt/_unit.py`
    - Heuristic: SLIDER+ONOFF→motorized; SENSOR only→sensor; else→light
 
-9. **Optionally enrich `UnitControl`** with semantic hints (unit, min/max labels)
+9. **✅ DONE - Optionally enrich `UnitControl`** with semantic hints (unit, min/max labels)
    - Extract from fixture spec e.g. `"unit": "°"` for louvers
 
 ### **Phase 4: Testing & Validation** (3 steps)

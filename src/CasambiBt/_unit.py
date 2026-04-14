@@ -86,6 +86,9 @@ class UnitControl:
 
     min: int | None = None
     max: int | None = None
+    name: str = ""
+    unit: str = ""
+    localized_names: dict[str, str] | None = None
 
 
 @dataclass(frozen=True, repr=True)
