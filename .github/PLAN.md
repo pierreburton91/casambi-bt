@@ -96,14 +96,14 @@ elif c.type == UnitControlType.TEMPERATURE and ... c.min and c.max:
 4. **✅ DONE - Add motorized/sensor example script** `examples/motorized_and_sensors.py`
    - Demonstrate louver positioning, screen control, and sensor reading
 
-### **Phase 2: Sensor Read-Only Enforcement** (3 steps)
+### **Phase 2: Sensor Read-Only Enforcement** (3 steps) ✅ DONE
 
-5. **Add readonly validation** in `src/CasambiBt/_casambi.py` before dispatching commands
+5. **✅ DONE - Add readonly validation** in `src/CasambiBt/_casambi.py` before dispatching commands
    - Detect readonly controls; log + skip operation (or optionally raise `ReadOnlyControlError`)
 
-6. **Extend `OperationsContext`** (`src/CasambiBt/_operation.py`) with device role metadata
+6. **✅ DONE - Extend `OperationsContext`** (`src/CasambiBt/_operation.py`) with device role metadata
 
-7. **Add sensor command rejection tests** `tests/test_sensor_commands.py`
+7. **✅ DONE - Add sensor command rejection tests** `tests/test_sensor_commands.py`
 
 ### **Phase 3: Device Classification Metadata** (2 steps)
 

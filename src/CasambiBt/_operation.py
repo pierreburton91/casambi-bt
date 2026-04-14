@@ -19,6 +19,7 @@ class OperationsContext:
     def __init__(self) -> None:
         self.origin: int = 1
         self.lifetime: int = 5
+        self.device_role: str | None = None  # Metadata for device role (e.g., "LIGHT", "MOTORIZED_SHADE")
 
     def prepareOperation(self, op: OpCode, target: int, payload: bytes) -> bytes:
         if len(payload) > 63:

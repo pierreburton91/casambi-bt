@@ -386,10 +386,23 @@ class Casambi:
         :raises TypeError: If target type is unsupported.
         :raises ConnectionStateError: If not connected to the network.
         """
+        # Check for read-only controls
         if control_type == UnitControlType.SENSOR:
             raise ReadOnlyControlError(
                 "Sensors are read-only. Cannot set a sensor value."
             )
+        
+        # For individual units, check if the control is supported and not read-only
+        if isinstance(target, Unit):
+            control = target.unitType.get_control(control_type)
+            if control is None:
+                raise ReadOnlyControlError(
+                    f"Control {control_type.name} is not supported by unit {target.name}."
+                )
+            if control.readonly:
+                raise ReadOnlyControlError(
+                    f"Control {control_type.name} is read-only on unit {target.name}."
+                )
 
         if control_type == UnitControlType.DIMMER:
             await self.setLevel(target, cast(int, value))
