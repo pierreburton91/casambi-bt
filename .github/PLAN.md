@@ -79,21 +79,21 @@ elif c.type == UnitControlType.TEMPERATURE and ... c.min and c.max:
 
 **Completed**: Updated SLIDER encoding/decoding in `_unit.py` to apply linear scaling. Created test validation in `test_slider_minmax.py`.
 
-### **Phase 1: Semantic Clarification** (4 steps)
+### **Phase 1: Semantic Clarification** (4 steps) ✅ DONE
 
-1. **Rename public control methods** in `src/CasambiBt/_casambi.py` to generic `setControl()` dispatcher
+1. **✅ DONE - Rename public control methods** in `src/CasambiBt/_casambi.py` to generic `setControl()` dispatcher
    - Old: `setLevel()`, `setColor()`, `turnOn()`, etc.
    - New: `setControl(target, control_type=UnitControlType.DIMMER, value)`
    - Keep backward-compat shims as optional aliases
 
-2. **Define `DeviceRole` enum** in `src/CasambiBt/_unit.py`
+2. **✅ DONE - Define `DeviceRole` enum** in `src/CasambiBt/_unit.py`
    - Values: `LIGHT`, `MOTORIZED_SHADE`, `MOTORIZED_SCREEN`, `SENSOR`, `UNKNOWN`
    - Queryable: `unit.unitType.device_role` property
 
-3. **Document control inspection patterns** in `README.md`
+3. **✅ DONE - Document control inspection patterns** in `README.md`
    - Example: `[u for u in units if u.unitType.device_role == DeviceRole.MOTORIZED_SHADE]`
 
-4. **Add motorized/sensor example script** `examples/motorized_and_sensors.py`
+4. **✅ DONE - Add motorized/sensor example script** `examples/motorized_and_sensors.py`
    - Demonstrate louver positioning, screen control, and sensor reading
 
 ### **Phase 2: Sensor Read-Only Enforcement** (3 steps)

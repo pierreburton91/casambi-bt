@@ -7,6 +7,7 @@ from ._casambi import Casambi
 from ._discover import discover
 from ._unit import (
     ColorSource,
+    DeviceRole,
     Group,
     Scene,
     Unit,

@@ -16,7 +16,7 @@ from ._client import CasambiClient, ConnectionState, IncomingPacketType
 from ._network import Network
 from ._operation import OpCode, OperationsContext
 from ._unit import Group, Scene, Unit, UnitControlType, UnitState
-from .errors import ConnectionStateError, ProtocolError
+from .errors import ConnectionStateError, ProtocolError, ReadOnlyControlError
 
 
 class Casambi:
@@ -350,6 +350,76 @@ class Casambi:
         :return: Nothing is returned by this function. To get the new state register a change handler.
         """
         await self.setLevel(target, level)  # type: ignore[arg-type]
+
+    async def setControl(
+        self,
+        target: Unit | Group | None,
+        control_type: UnitControlType,
+        value: int | tuple[int, int, int] | tuple[float, float],
+    ) -> None:
+        """Set a control value for one or multiple units using a device-agnostic interface.
+
+        This is the primary method for controlling any unit, replacing device-specific methods
+        like setLevel(), setColor(), setSlider(), etc. It automatically dispatches to the
+        appropriate control logic based on the control type.
+
+        If ``target`` is of type ``Unit`` only this unit is affected.
+        If ``target`` is of type ``Group`` the whole group is affected.
+        If ``target`` is of type ``None`` all units in the network are affected.
+
+        :param target: One or multiple targeted units.
+        :param control_type: The type of control to set (UnitControlType).
+        :param value: The desired value. Type depends on control_type:
+            - DIMMER: int [0, 255]
+            - SLIDER: int [0, 255]
+            - VERTICAL: int [0, 255]
+            - WHITE: int [0, 255]
+            - TEMPERATURE: int (in degrees Kelvin)
+            - RGB: tuple[int, int, int] [0, 255] each
+            - XY: tuple[float, float] [0.0, 1.0] each
+            - ONOFF: int (0=off, any other value=on)
+            - COLORSOURCE: int (ColorSource enum value)
+            - SENSOR: Not writable (raises ReadOnlyControlError)
+        :return: Nothing is returned by this function. To get the new state register a change handler.
+        :raises ReadOnlyControlError: If attempting to set a read-only control (e.g., SENSOR).
+        :raises ValueError: If the value is invalid for the given control type.
+        :raises TypeError: If target type is unsupported.
+        :raises ConnectionStateError: If not connected to the network.
+        """
+        if control_type == UnitControlType.SENSOR:
+            raise ReadOnlyControlError(
+                "Sensors are read-only. Cannot set a sensor value."
+            )
+
+        if control_type == UnitControlType.DIMMER:
+            await self.setLevel(target, cast(int, value))
+        elif control_type == UnitControlType.SLIDER:
+            await self.setSlider(target, cast(int, value))
+        elif control_type == UnitControlType.VERTICAL:
+            await self.setVertical(target, cast(int, value))
+        elif control_type == UnitControlType.WHITE:
+            await self.setWhite(target, cast(int, value))
+        elif control_type == UnitControlType.TEMPERATURE:
+            await self.setTemperature(target, cast(int, value))
+        elif control_type == UnitControlType.RGB:
+            await self.setColor(target, cast(tuple[int, int, int], value))
+        elif control_type == UnitControlType.XY:
+            await self.setColorXY(target, cast(tuple[float, float], value))
+        elif control_type == UnitControlType.ONOFF:
+            # ONOFF uses setLevel with 255 or 0
+            await self.setLevel(target, 255 if cast(int, value) else 0)
+        elif control_type == UnitControlType.COLORSOURCE:
+            # Color source switching uses setColor internally in some protocols
+            # For now, treat as unsupported to avoid confusion
+            raise ValueError(
+                "COLORSOURCE control is not yet supported via setControl(). "
+                "Use device-specific methods if available."
+            )
+        else:
+            raise ValueError(
+                f"Unsupported control type: {control_type}. "
+                f"Control may not be implemented yet."
+            )
 
     async def _send(
         self, target: Unit | Group | Scene | None, state: bytes, opcode: OpCode

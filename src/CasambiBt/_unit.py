@@ -48,6 +48,26 @@ class UnitControlType(Enum):
 
 
 @unique
+class DeviceRole(Enum):
+    """Semantic classification of a device based on its capabilities."""
+
+    LIGHT = 0
+    """A light fixture with dimmer and optional color controls."""
+
+    MOTORIZED_SHADE = 1
+    """A motorized shade or blind controlled by slider position."""
+
+    MOTORIZED_SCREEN = 2
+    """A motorized projection screen or similar device."""
+
+    SENSOR = 3
+    """A sensor providing read-only measurements (temperature, light, humidity, presence, etc.)."""
+
+    UNKNOWN = 99
+    """Device type cannot be determined from available controls."""
+
+
+@unique
 class ColorSource(Enum):
     """The possible values for the color source control."""
 
@@ -95,6 +115,59 @@ class UnitType:
                 return c
 
         return None
+
+    @property
+    def device_role(self) -> DeviceRole:
+        """Determine the semantic role of this device based on its available controls.
+
+        Heuristic classification:
+        - SENSOR: Only has SENSOR control type (read-only measurements)
+        - MOTORIZED_SHADE: Has SLIDER + ONOFF (motorized blind/shade positioning)
+        - MOTORIZED_SCREEN: Has ONOFF (motor control without slider; e.g., projection screen)
+        - LIGHT: Has DIMMER or color controls (RGB, TEMPERATURE, XY, WHITE, COLORSOURCE)
+        - UNKNOWN: Unclear device type
+
+        :return: The detected DeviceRole for this device.
+        """
+        control_types = {c.type for c in self.controls}
+
+        # Check for sensor-only devices
+        if control_types == {UnitControlType.SENSOR}:
+            return DeviceRole.SENSOR
+
+        # Check for motorized shades (slider + on/off control)
+        if (
+            UnitControlType.SLIDER in control_types
+            and UnitControlType.ONOFF in control_types
+        ):
+            return DeviceRole.MOTORIZED_SHADE
+
+        # Check for motorized screens (on/off without slider)
+        if (
+            UnitControlType.ONOFF in control_types
+            and UnitControlType.SLIDER not in control_types
+            and not (
+                UnitControlType.DIMMER in control_types
+                or UnitControlType.RGB in control_types
+                or UnitControlType.TEMPERATURE in control_types
+                or UnitControlType.XY in control_types
+                or UnitControlType.WHITE in control_types
+            )
+        ):
+            return DeviceRole.MOTORIZED_SCREEN
+
+        # Check for lights (dimmer or color controls)
+        if (
+            UnitControlType.DIMMER in control_types
+            or UnitControlType.RGB in control_types
+            or UnitControlType.TEMPERATURE in control_types
+            or UnitControlType.XY in control_types
+            or UnitControlType.WHITE in control_types
+            or UnitControlType.COLORSOURCE in control_types
+        ):
+            return DeviceRole.LIGHT
+
+        return DeviceRole.UNKNOWN
 
 
 # TODO: Support for different resolutions?

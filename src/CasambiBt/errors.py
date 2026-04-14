@@ -69,3 +69,9 @@ class UnsupportedProtocolVersion(CasambiBtError):
     """Exception that is raised when the network has an unsupported version."""
 
     pass
+
+
+class ReadOnlyControlError(CasambiBtError):
+    """Exception that is raised when attempting to set a read-only control."""
+
+    pass
