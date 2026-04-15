@@ -3,13 +3,15 @@
 
 import json
 import os
-from src.CasambiBt import Casambi
-from src.CasambiBt._unit import Unit, UnitType, UnitControl, UnitControlType, UnitState, DeviceRole
+from CasambiBt import Casambi
+from CasambiBt._unit import Unit, UnitType, UnitControl, UnitControlType, UnitState, DeviceRole
 
 
 def load_fixture_spec(filename: str) -> dict:
     """Load a fixture spec from the doc/fixtures-specs directory."""
-    fixture_path = os.path.join(os.path.dirname(__file__), "doc", "fixtures-specs", filename)
+    fixture_path = os.path.join(
+        os.path.dirname(__file__), "..", "doc", "fixtures-specs", filename
+    )
     with open(fixture_path, "r") as f:
         return json.load(f)
 
@@ -118,8 +120,8 @@ def test_state_parsing_from_bytes():
     # Mock state bytes for louver: slider at max (142° → 255 encoded)
     # Based on fixture: slider at offset 28, length 8, min=0, max=142
     state_bytes = bytearray(louver_type.stateLength)
-    state_bytes[28 // 8] = 255  # Max position encoded
-    state_bytes[36 // 8] = 1    # ON/OFF at offset 36, length 1, set to ON
+    state_bytes[28 // 8] = 0xF0  # Max slider position encoded across the byte boundary
+    state_bytes[36 // 8] = 0x1F  # Lower nibble contains slider high bits and bit4 is ON/OFF
 
     louver_unit.setStateFromBytes(bytes(state_bytes))
 
@@ -143,8 +145,8 @@ def test_state_parsing_from_bytes():
     # Mock state bytes for screen: dimmer at 50%
     # Based on fixture: dimmer at offset 28, length 8
     state_bytes = bytearray(screen_type.stateLength)
-    state_bytes[28 // 8] = 128  # 50% position
-    state_bytes[36 // 8] = 1    # ON/OFF at offset 36, length 1, set to ON
+    state_bytes[28 // 8] = 0x00  # 50% dimmer position encoded across the byte boundary
+    state_bytes[36 // 8] = 0x18  # Lower nibble contains dimmer high bits and bit4 is ON/OFF
 
     screen_unit.setStateFromBytes(bytes(state_bytes))
 
@@ -193,7 +195,7 @@ def test_readonly_sensor_rejection():
         asyncio.run(casa.setControl(None, UnitControlType.SENSOR, 25))
         assert False, "Expected ReadOnlyControlError for SENSOR control"
     except Exception as e:
-        from src.CasambiBt.errors import ReadOnlyControlError
+        from CasambiBt.errors import ReadOnlyControlError
         assert isinstance(e, ReadOnlyControlError), f"Expected ReadOnlyControlError, got {type(e)}: {e}"
         assert "Sensors are read-only" in str(e), f"Unexpected error message: {e}"
         print("  ✓ SENSOR control correctly rejected as read-only")

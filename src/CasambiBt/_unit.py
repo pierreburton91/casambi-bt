@@ -140,7 +140,18 @@ class UnitType:
         control_types = {c.type for c in self.controls}
 
         # Check for sensor-only devices
-        if control_types == {UnitControlType.SENSOR}:
+        if (
+            UnitControlType.SENSOR in control_types
+            and not (
+                UnitControlType.DIMMER in control_types
+                or UnitControlType.RGB in control_types
+                or UnitControlType.TEMPERATURE in control_types
+                or UnitControlType.XY in control_types
+                or UnitControlType.WHITE in control_types
+                or UnitControlType.COLORSOURCE in control_types
+                or UnitControlType.SLIDER in control_types
+            )
+        ):
             return DeviceRole.SENSOR
 
         # Check for motorized shades (slider + on/off control)
@@ -150,16 +161,17 @@ class UnitType:
         ):
             return DeviceRole.MOTORIZED_SHADE
 
-        # Check for motorized screens (on/off without slider)
+        # Check for motorized screens (dimmer driven motor control without slider)
         if (
-            UnitControlType.ONOFF in control_types
+            UnitControlType.DIMMER in control_types
+            and UnitControlType.ONOFF in control_types
             and UnitControlType.SLIDER not in control_types
             and not (
-                UnitControlType.DIMMER in control_types
-                or UnitControlType.RGB in control_types
+                UnitControlType.RGB in control_types
                 or UnitControlType.TEMPERATURE in control_types
                 or UnitControlType.XY in control_types
                 or UnitControlType.WHITE in control_types
+                or UnitControlType.COLORSOURCE in control_types
             )
         ):
             return DeviceRole.MOTORIZED_SCREEN
@@ -192,6 +204,7 @@ class UnitState:
         self._colorsource: ColorSource | None = None
         self._xy: tuple[float, float] | None = None
         self._slider: int | None = None
+        self._sensor: int | None = None
         self._onoff: bool | None = None
 
     def _check_range(
@@ -308,6 +321,18 @@ class UnitState:
         self._temperature = None
 
     @property
+    def sensor(self) -> int | None:
+        return self._sensor
+
+    @sensor.setter
+    def sensor(self, value: int) -> None:
+        self._sensor = value
+
+    @sensor.deleter
+    def sensor(self) -> None:
+        self._sensor = None
+
+    @property
     def colorsource(self) -> ColorSource | None:
         return self._colorsource
 
@@ -336,7 +361,7 @@ class UnitState:
 
     SLIDER_RESOLUTION: Final = 8
     SLIDER_MIN: Final = 0
-    SLIDER_MAX: Final = 2**VERTICAL_RESOLUTION - 1
+    SLIDER_MAX: Final = 2**SLIDER_RESOLUTION - 1
 
     @property
     def slider(self) -> int | None:
@@ -463,12 +488,26 @@ class Unit:
             elif (
                 c.type == UnitControlType.TEMPERATURE
                 and state.temperature is not None
-                and c.min
-                and c.max
+                and c.min is not None
+                and c.max is not None
+                and c.max != c.min
             ):
                 clampedTemp = min(c.max, max(c.min, state.temperature))
                 tempMask = 2**c.length - 1
                 scaledValue = (tempMask * (clampedTemp - c.min)) // (c.max - c.min)
+            elif (
+                c.type == UnitControlType.SENSOR
+                and state.sensor is not None
+                and c.min is not None
+                and c.max is not None
+                and c.length > 0
+                and c.max != c.min
+            ):
+                clampedSensor = min(c.max, max(c.min, state.sensor))
+                sensorMask = 2**c.length - 1
+                scaledValue = (sensorMask * (clampedSensor - c.min)) // (
+                    c.max - c.min
+                )
             elif (
                 c.type == UnitControlType.COLORSOURCE and state.colorsource is not None
             ):
@@ -563,13 +602,23 @@ class Unit:
                 scale = UnitState.WHITE_RESOLUTION - c.length
                 self._state.white = cInt << scale
             elif c.type == UnitControlType.TEMPERATURE:
-                if not c.max or not c.min:
+                if c.max is None or c.min is None or c.max == c.min:
                     _LOGGER.warning("Can't set temperature when min or max unknown.")
                     continue
                 tempRange = c.max - c.min
                 tempMask = 2**c.length - 1
                 # TODO: We should probalby try to make this number a bit more round
                 self._state.temperature = int(((cInt / tempMask) * tempRange) + c.min)
+            elif c.type == UnitControlType.SENSOR:
+                if c.length == 0 or c.max is None or c.min is None or c.max == c.min:
+                    if c.length == 0:
+                        _LOGGER.warning("Can't set sensor when length is zero.")
+                    else:
+                        _LOGGER.warning("Can't set sensor when min or max unknown.")
+                    continue
+                sensorRange = c.max - c.min
+                sensorMask = 2**c.length - 1
+                self._state.sensor = int(((cInt / sensorMask) * sensorRange) + c.min)
             elif c.type == UnitControlType.COLORSOURCE:
                 self._state.colorsource = ColorSource(cInt)
             elif c.type == UnitControlType.XY:
@@ -579,7 +628,7 @@ class Unit:
                 x = (cInt >> coordLen) & xyMask
                 self._state.xy = (x / xyMask, y / xyMask)
             elif c.type == UnitControlType.SLIDER:
-                if not c.max or not c.min:
+                if c.max is None or c.min is None or c.max == c.min:
                     _LOGGER.warning("Can't set slider when min or max unknown.")
                     continue
                 sliderRange = c.max - c.min

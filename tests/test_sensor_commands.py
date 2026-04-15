@@ -2,19 +2,19 @@
 """Test sensor command rejection for read-only controls."""
 
 import asyncio
-from src.CasambiBt import Casambi
-from src.CasambiBt._unit import UnitControlType
-from src.CasambiBt.errors import ReadOnlyControlError
+from CasambiBt import Casambi
+from CasambiBt._unit import UnitControlType
+from CasambiBt.errors import ReadOnlyControlError
 
 
-async def test_sensor_control_rejection():
+def test_sensor_control_rejection():
     """Verify that attempting to set a SENSOR control raises ReadOnlyControlError."""
     casa = Casambi()
     
     # Attempt to set a sensor value should raise ReadOnlyControlError
     try:
         # This should raise before any network operations
-        await casa.setControl(None, UnitControlType.SENSOR, 25)
+        asyncio.run(casa.setControl(None, UnitControlType.SENSOR, 25))
         assert False, "Expected ReadOnlyControlError to be raised"
     except ReadOnlyControlError as e:
         assert "Sensors are read-only" in str(e)
@@ -23,7 +23,7 @@ async def test_sensor_control_rejection():
         assert False, f"Unexpected exception: {e}"
 
 
-async def test_other_controls_allowed():
+def test_other_controls_allowed():
     """Verify that non-sensor controls don't raise ReadOnlyControlError immediately."""
     casa = Casambi()
     
@@ -38,7 +38,7 @@ async def test_other_controls_allowed():
     for control_type, value in allowed_controls:
         try:
             # This will fail later due to no connection, but not due to readonly
-            await casa.setControl(None, control_type, value)
+            asyncio.run(casa.setControl(None, control_type, value))
             assert False, f"Expected connection error, not success for {control_type}"
         except ReadOnlyControlError:
             assert False, f"Unexpected ReadOnlyControlError for {control_type}"
@@ -48,11 +48,7 @@ async def test_other_controls_allowed():
             print(f"✓ {control_type} control passed readonly check (failed later as expected)")
 
 
-async def main():
-    await test_sensor_control_rejection()
-    await test_other_controls_allowed()
-    print("All sensor command rejection tests passed!")
-
-
 if __name__ == "__main__":
-    asyncio.run(main())
+    test_sensor_control_rejection()
+    test_other_controls_allowed()
+    print("All sensor command rejection tests passed!")

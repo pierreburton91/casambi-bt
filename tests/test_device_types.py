@@ -3,12 +3,14 @@
 
 import json
 import os
-from src.CasambiBt._unit import Unit, UnitType, UnitControl, UnitControlType, UnitState
+from CasambiBt._unit import Unit, UnitType, UnitControl, UnitControlType, UnitState
 
 
 def load_fixture_spec(filename: str) -> dict:
     """Load a fixture spec from the doc/fixtures-specs directory."""
-    fixture_path = os.path.join(os.path.dirname(__file__), "doc", "fixtures-specs", filename)
+    fixture_path = os.path.join(
+        os.path.dirname(__file__), "..", "doc", "fixtures-specs", filename
+    )
     with open(fixture_path, "r") as f:
         return json.load(f)
 
@@ -47,11 +49,15 @@ def create_unit_type_from_spec(spec: dict) -> UnitType:
     )
 
 
-def test_round_trip_encoding(unit_type: UnitType, control_type: UnitControlType, test_values: list[int]):
+def round_trip_encoding(unit_type: UnitType, control_type: UnitControlType, test_values: list[int]):
     """Test round-trip encoding/decoding for a specific control type."""
     control = unit_type.get_control(control_type)
     if control is None:
         print(f"⚠️  Skipping {control_type.name} - not supported by {unit_type.model}")
+        return
+
+    if control.length == 0:
+        print(f"⚠️  Skipping {control_type.name} - zero-length control cannot round-trip")
         return
 
     if control.readonly and control_type != UnitControlType.SENSOR:
@@ -127,7 +133,7 @@ def test_louver_slider():
 
     # Test values covering the range [0, 142]
     test_values = [0, 1, 71, 141, 142]
-    test_round_trip_encoding(unit_type, UnitControlType.SLIDER, test_values)
+    round_trip_encoding(unit_type, UnitControlType.SLIDER, test_values)
 
 
 def test_screen_dimmer():
@@ -137,7 +143,7 @@ def test_screen_dimmer():
 
     # Test values for dimmer (0-255 range, but screen may use subset)
     test_values = [0, 1, 128, 254, 255]
-    test_round_trip_encoding(unit_type, UnitControlType.DIMMER, test_values)
+    round_trip_encoding(unit_type, UnitControlType.DIMMER, test_values)
 
 
 def test_sensor_values():
@@ -147,7 +153,7 @@ def test_sensor_values():
 
     # Test various sensor values
     test_values = [0, 1, 100, 1000, 10000]
-    test_round_trip_encoding(unit_type, UnitControlType.SENSOR, test_values)
+    round_trip_encoding(unit_type, UnitControlType.SENSOR, test_values)
 
 
 def test_temperature_control():
@@ -162,7 +168,7 @@ def test_temperature_control():
         if control:
             # Test temperature values in Kelvin
             test_values = [2700, 3000, 4000, 6500]
-            test_round_trip_encoding(unit_type, UnitControlType.TEMPERATURE, test_values)
+            round_trip_encoding(unit_type, UnitControlType.TEMPERATURE, test_values)
             break
     else:
         print("⚠️  No TEMPERATURE control found in fixtures")

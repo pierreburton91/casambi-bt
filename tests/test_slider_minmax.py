@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Test SLIDER min/max encoding fix for motorized devices like louvers."""
 
-from src.CasambiBt._unit import Unit, UnitType, UnitControl, UnitControlType, UnitState
+from CasambiBt._unit import Unit, UnitType, UnitControl, UnitControlType, UnitState
 
 
 def test_slider_encoding_with_minmax():
