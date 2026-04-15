@@ -1,0 +1,8 @@
+Final state of all units:
+  Screen: UnitState(dimmer=128, vertical=None, rgb=None, white=None, temperature=None, colorsource=None, xy=None, slider=None, onoff=False)
+  Lames: UnitState(dimmer=None, vertical=None, rgb=None, white=None, temperature=None, colorsource=None, xy=None, slider=38, onoff=False)
+  Repeater: UnitState(dimmer=None, vertical=None, rgb=None, white=None, temperature=None, colorsource=None, xy=None, slider=None, onoff=None)
+  Spots: UnitState(dimmer=128, vertical=None, rgb=None, white=None, temperature=None, colorsource=None, xy=None, slider=None, onoff=None)
+  LED: UnitState(dimmer=128, vertical=None, rgb=None, white=None, temperature=None, colorsource=None, xy=None, slider=None, onoff=None)
+  24VDC_4CH_PB_Winsol: UnitState(dimmer=None, vertical=None, rgb=None, white=None, temperature=None, colorsource=None, xy=None, slider=None, onoff=None)
+  Sensor: UnitState(dimmer=None, vertical=None, rgb=None, white=None, temperature=None, colorsource=None, xy=None, slider=None, onoff=True)

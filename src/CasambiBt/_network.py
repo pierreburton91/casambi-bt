@@ -349,7 +349,7 @@ class Network:
             return None
 
         unitTypeJson = res.json()
-
+        self._logger.debug(f"Fetched unit type JSON {unitTypeJson}")
         # Parse UnitControls
         controls = []
         for controlJson in unitTypeJson["controls"]:
@@ -364,7 +364,7 @@ class Network:
 
             name = controlJson.get("name", "")
             unit = controlJson.get("unit", "")
-            
+
             # Extract localized names if `name` is found in `strings`.
             localized_names = None
             if "strings" in unitTypeJson and name in unitTypeJson["strings"]:

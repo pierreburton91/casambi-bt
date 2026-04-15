@@ -89,17 +89,17 @@ async def main() -> None:
                 print(f"  {sensor.name}: {sensor.state}")
 
         # Demonstrate error handling for read-only sensors
-        print("\nDemonstrating read-only sensor protection...")
-        try:
-            await casa.setControl(sensors[0] if sensors else None, UnitControlType.SENSOR, 25)
-        except ReadOnlyControlError as e:
-            print(f"  ✓ Correctly prevented setting sensor value: {e}")
+        # print("\nDemonstrating read-only sensor protection...")
+        # try:
+        #     await casa.setControl(sensors[0] if sensors else None, UnitControlType.SENSOR, 25)
+        # except ReadOnlyControlError as e:
+        #    print(f"  ✓ Correctly prevented setting sensor value: {e}")
 
         await asyncio.sleep(2)
 
         # Turn everything off
-        print("\nTurning all devices off...")
-        await casa.setControl(None, UnitControlType.ONOFF, 0)
+        # print("\nTurning all devices off...")
+        # await casa.setControl(None, UnitControlType.ONOFF, 0)
 
         # Print final state of all units
         print("\nFinal state of all units:")
