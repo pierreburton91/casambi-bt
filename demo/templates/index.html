@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Casambi BT Control</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <main>
+        <h1>Casambi BT Control</h1>
+
+        <!-- Discovery Section -->
+        <section id="discovery-section">
+            <h2>Discover Networks</h2>
+            <form id="discovery-form">
+                <button type="button" id="refresh-networks-btn">Refresh Networks</button>
+            </form>
+            <div id="networks-list">
+                <!-- Networks will be populated here -->
+            </div>
+            <div id="discovery-error" class="error-message" style="display: none;"></div>
+        </section>
+
+        <!-- Connection Section -->
+        <section id="connection-section" style="display: none;">
+            <h2>Connect to Network</h2>
+            <form id="connection-form">
+                <label for="network-select">Select Network:</label>
+                <select id="network-select" required>
+                    <option value="">Choose a network...</option>
+                </select>
+                <label for="password-input">Password:</label>
+                <input type="password" id="password-input" required>
+                <button type="submit">Connect</button>
+            </form>
+            <div id="connection-error" class="error-message" style="display: none;"></div>
+        </section>
+
+        <!-- Dashboard Section -->
+        <section id="dashboard-section" style="display: none;">
+            <h2>Control Dashboard</h2>
+            <div id="status-message"></div>
+            <button id="disconnect-btn">Disconnect</button>
+            <label for="polling-toggle">Enable Real-time Updates:</label>
+            <input type="checkbox" id="polling-toggle">
+            <div id="units-container">
+                <!-- Unit cards will be rendered here -->
+            </div>
+        </section>
+
+        <!-- Global Error/Status -->
+        <div id="global-status" class="status-message" style="display: none;"></div>
+    </main>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
