@@ -5,7 +5,7 @@ import threading
 from flask import Flask, jsonify, render_template, request
 
 from CasambiBt import Casambi, discover
-from CasambiBt._unit import UnitControlType
+from CasambiBt._unit import UnitControlType, Unit
 
 app = Flask(__name__)
 
@@ -26,7 +26,7 @@ state_queue = queue.Queue()  # For async callback data
 polling_enabled = False
 
 # Background thread for async operations
-loop = None
+loop: asyncio.AbstractEventLoop | None = None
 
 def run_async_loop():
     global loop
@@ -39,13 +39,15 @@ threading.Thread(target=run_async_loop, daemon=True).start()
 
 def run_in_thread(coro):
     """Helper to run async functions in the background thread"""
+    if not loop:
+        raise RuntimeError("Event loop not initialized")
     future = asyncio.run_coroutine_threadsafe(coro, loop)
     return future.result()
 
 # Casambi callback handlers
-def on_unit_changed(unit_id, state):
+def on_unit_changed(unit: Unit):
     """Callback for unit state changes"""
-    state_queue.put({"type": "unit_update", "unit_id": unit_id, "state": state})
+    state_queue.put({"type": "unit_update", "unit_id": unit.uuid, "state": unit.state})
 
 def on_disconnected():
     """Callback for disconnection"""
