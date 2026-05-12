@@ -15,17 +15,17 @@ RUN apt-get update && apt-get install -y \
 
 # Install pipenv
 RUN pip install --no-cache-dir pipenv
+RUN pip install --no-cache-dir mistral-vibe
 
 # Copy Pipfile for dependency installation
-COPY Pipfile /app/Pipfile
-COPY Pipfile.lock /app/Pipfile.lock
+COPY Pipfile Pipfile.lock pyproject.toml /workspaces/casambi-bt/
+COPY . /workspaces/casambi-bt/
 
 # Set working directory
-WORKDIR /app
+WORKDIR /workspaces/casambi-bt
 
 # Install Python dependencies system-wide (including dev dependencies)
 RUN pipenv install --dev --system --deploy
-
 # Final stage: Runtime environment
 FROM python:3.12-slim
 

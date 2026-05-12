@@ -7,15 +7,9 @@
     "dockerfile": "Dockerfile",
     "context": ".."
   },
-
-  // Features to add to the dev container. More info: https://containers.dev/features.
-  // "features": {},
-
-  // Use 'forwardPorts' to make a list of ports inside the container available locally.
-  // "forwardPorts": [],
-
-  // Use 'postCreateCommand' to run commands after the container is created.
-  // "postCreateCommand": "pip3 install --user -r requirements.txt",
+  "remoteEnv": {
+    "MISTRAL_API_KEY": "${localEnv:MISTRAL_API_KEY}"
+  },
 
   // Configure tool-specific properties.
   "customizations": {
@@ -36,9 +30,13 @@
       }
     }
   },
+  "mounts": [
+    "source=${localWorkspaceFolder}/.env,target=/casambi-bt/.env,type=bind"
+  ],
+
   // This installs dependencies and makes the local package importable in the venv.
-  // Then run pipenv shell to activate the venv and start working.
-  "postCreateCommand": "pipenv install --dev -e ."
+    // Then run pipenv shell to activate the venv and start working.
+  "postCreateCommand": "bash .devcontainer/setup.sh"
 
   // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
   // "remoteUser": "root"
