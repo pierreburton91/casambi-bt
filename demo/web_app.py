@@ -7,7 +7,7 @@ from quart import Quart, jsonify, render_template, request
 from quart_cors import cors
 
 from CasambiBt import Casambi, discover
-from CasambiBt._unit import UnitControlType, Unit
+from CasambiBt._unit import Unit, UnitControlType
 
 # Configure logging
 logging.basicConfig(
@@ -62,7 +62,7 @@ async def process_state_queue():
                 logger.error(f"Error processing state queue message: {e}", exc_info=True)
             finally:
                 state_queue.task_done()
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Timeout occurred, check shutdown_event again
             continue
         except asyncio.CancelledError:
@@ -107,12 +107,12 @@ def serialize_unit(unit: Unit) -> dict:
             state_dict["red"] = int(r) if r is not None else None
             state_dict["green"] = int(g) if g is not None else None
             state_dict["blue"] = int(b) if b is not None else None
-        
+
         # Extract XY components
         if unit.state.xy:
             state_dict["x"] = float(unit.state.xy[0]) if unit.state.xy[0] is not None else None
             state_dict["y"] = float(unit.state.xy[1]) if unit.state.xy[1] is not None else None
-        
+
         state_dict.update({
             "dimmer": unit.state.dimmer,
             "white": unit.state.white,
@@ -180,7 +180,7 @@ async def connect_network():
             return jsonify({"success": False, "error": "Device not found"}), 404
 
         logger.info(f"Connecting to network: {device.name or device.address}")
-        
+
         casambi_instance = Casambi()
         casambi_instance.registerUnitChangedHandler(on_unit_changed)
         casambi_instance.registerDisconnectCallback(on_disconnected)
@@ -276,7 +276,7 @@ async def control_unit(unit_id):
         if not data:
             logger.warning("Control request missing data")
             return jsonify({"success": False, "error": "Request data is required"}), 400
-        
+
         control_type_str = data.get('control_type')
         value = data.get('value')
 
@@ -292,7 +292,7 @@ async def control_unit(unit_id):
 
         logger.info(f"Sending {control_type_str}={value} to unit {unit.name} ({unit_id})")
         await casambi_instance.setControl(unit, control_type, value)
-        logger.debug(f"Control command sent successfully")
+        logger.debug("Control command sent successfully")
 
         return jsonify({"success": True})
     except ValueError as e:
@@ -307,12 +307,12 @@ async def cleanup():
     """Clean up resources on shutdown."""
     global casambi_instance, queue_task, shutdown_event
     logger.info("Starting cleanup...")
-    
+
     # Signal the queue processor to stop
     if shutdown_event and not shutdown_event.is_set():
         shutdown_event.set()
         logger.debug("Shutdown event set, queue processor will exit")
-    
+
     # Wait for the queue processing task to finish
     if queue_task:
         try:
@@ -322,7 +322,7 @@ async def cleanup():
             logger.debug("Queue task was cancelled")
         except Exception as e:
             logger.error(f"Error waiting for queue task: {e}")
-    
+
     # Drain any remaining items in the queue
     if state_queue:
         while not state_queue.empty():
@@ -332,7 +332,7 @@ async def cleanup():
             except asyncio.QueueEmpty:
                 break
         logger.debug("Queue drained")
-    
+
     # Disconnect from Casambi
     if casambi_instance:
         try:
@@ -341,7 +341,7 @@ async def cleanup():
             logger.info("Casambi disconnected")
         except Exception as e:
             logger.error(f"Error disconnecting from Casambi: {e}")
-    
+
     logger.info("Cleanup complete")
 
 async def shutdown_handler():
@@ -353,13 +353,13 @@ async def shutdown_handler():
 
 async def main():
     global queue_task, shutdown_event
-    
+
     # Initialize the background task for processing the queue
     queue_task = asyncio.create_task(process_state_queue())
-    
+
     # Initialize shutdown event for graceful shutdown
     shutdown_event = asyncio.Event()
-    
+
     # Register signal handlers for graceful shutdown
     # Try Unix-style signal handlers first (add_signal_handler)
     try:
@@ -373,28 +373,28 @@ async def main():
         def handle_signal(signum, frame):
             logger.info(f"Received signal {signum}, initiating shutdown...")
             asyncio.create_task(shutdown_handler())
-        
+
         signal.signal(signal.SIGINT, handle_signal)
         if hasattr(signal, 'SIGTERM'):
             signal.signal(signal.SIGTERM, handle_signal)
         logger.debug("Using standard signal handlers")
-    
+
     logger.info("Starting Casambi BT Demo Web App on http://0.0.0.0:5000")
-    
+
     try:
         # Run the app and wait for shutdown signal concurrently
         app_task = asyncio.create_task(app.run_task(host='0.0.0.0', port=5000))
-        
+
         # Wait for either the app to finish or shutdown signal
         done, pending = await asyncio.wait(
             [app_task, shutdown_event.wait()],
             return_when=asyncio.FIRST_COMPLETED
         )
-        
+
         # Cancel any remaining tasks
         for task in pending:
             task.cancel()
-        
+
         # Wait for app task to finish cleanup
         if app_task in pending:
             try:
