@@ -28,9 +28,9 @@ casambi_instance = None
 connection_status = {"connected": False, "network_name": None, "network_id": None, "error": None}
 units_cache = {}
 state_lock = asyncio.Lock()  # For synchronizing access to shared state
-polling_enabled = False
+
 discovered_devices = []  # List of BLEDevice
-state_queue: asyncio.Queue = None  # Async queue for state updates from callbacks
+state_queue = asyncio.Queue()  # Async queue for state updates from callbacks
 queue_task: asyncio.Task = None  # Background task for processing the queue
 shutdown_event: asyncio.Event = None  # Event for graceful shutdown
 
@@ -43,23 +43,34 @@ class StateMessage:
 
 async def process_state_queue():
     """Background task to process state updates from the async queue."""
-    global connection_status, units_cache
-    while True:
-        message = await state_queue.get()
+    global connection_status, units_cache, shutdown_event
+    while not shutdown_event.is_set():
         try:
-            async with state_lock:
-                if message.msg_type == "unit_update":
-                    unit = message.data
-                    units_cache[str(unit.uuid)] = unit
-                    logger.debug(f"Updated unit {unit.uuid} in cache")
-                elif message.msg_type == "disconnected":
-                    connection_status["connected"] = False
-                    connection_status["error"] = "Disconnected"
-                    logger.info("Connection status updated to disconnected")
+            # Use timeout to allow periodic shutdown checks
+            message = await asyncio.wait_for(state_queue.get(), timeout=0.1)
+            try:
+                async with state_lock:
+                    if message.msg_type == "unit_update":
+                        unit = message.data
+                        units_cache[str(unit.uuid)] = unit
+                        logger.debug(f"Updated unit {unit.uuid} in cache")
+                    elif message.msg_type == "disconnected":
+                        connection_status["connected"] = False
+                        connection_status["error"] = "Disconnected"
+                        logger.info("Connection status updated to disconnected")
+            except Exception as e:
+                logger.error(f"Error processing state queue message: {e}", exc_info=True)
+            finally:
+                state_queue.task_done()
+        except asyncio.TimeoutError:
+            # Timeout occurred, check shutdown_event again
+            continue
+        except asyncio.CancelledError:
+            # Task was cancelled, exit gracefully
+            logger.info("Queue processor cancelled, shutting down")
+            break
         except Exception as e:
-            logger.error(f"Error processing state queue message: {e}", exc_info=True)
-        finally:
-            state_queue.task_done()
+            logger.error(f"Unexpected error in queue processor: {e}", exc_info=True)
 
 
 # Casambi callback handlers
@@ -68,26 +79,22 @@ def on_unit_changed(unit: Unit):
     
     Puts a message into the async queue for processing by the background task.
     """
-    global state_queue
-    if state_queue:
-        try:
-            state_queue.put_nowait(StateMessage("unit_update", unit))
-            logger.debug(f"Unit changed callback: {unit.name} ({unit.uuid})")
-        except Exception as e:
-            logger.error(f"Failed to queue unit update: {e}")
+    try:
+        state_queue.put_nowait(StateMessage("unit_update", unit))
+        logger.debug(f"Unit changed callback: {unit.name} ({unit.uuid})")
+    except Exception as e:
+        logger.error(f"Failed to queue unit update: {e}")
 
 def on_disconnected():
     """Callback for disconnection - called synchronously by Casambi lib.
     
     Puts a message into the async queue for processing by the background task.
     """
-    global state_queue
-    if state_queue:
-        try:
-            state_queue.put_nowait(StateMessage("disconnected"))
-            logger.info("Disconnected callback triggered")
-        except Exception as e:
-            logger.error(f"Failed to queue disconnection: {e}")
+    try:
+        state_queue.put_nowait(StateMessage("disconnected"))
+        logger.info("Disconnected callback triggered")
+    except Exception as e:
+        logger.error(f"Failed to queue disconnection: {e}")
 
 
 def serialize_unit(unit: Unit) -> dict:
@@ -156,7 +163,7 @@ async def get_networks():
 @app.post('/api/connect')
 async def connect_network():
     """Connect to a Casambi network."""
-    global casambi_instance, connection_status, units_cache, discovered_devices, state_queue
+    global casambi_instance, connection_status, units_cache, discovered_devices
     try:
         data = await request.get_json()
         address = data.get('address')
@@ -186,17 +193,18 @@ async def connect_network():
             connection_status["network_name"] = casambi_instance.networkName
             connection_status["network_id"] = casambi_instance.networkId
             connection_status["error"] = None
-            # Fetch units
-            units_cache = {str(u.uuid): u for u in casambi_instance.units}
-            logger.info(f"Connected to network '{casambi_instance.networkName}' with {len(units_cache)} units")
+            logger.info(f"Connected to network '{casambi_instance.networkName}'")
 
         return jsonify({"success": True})
     except ValueError as e:
         logger.error(f"Invalid request data: {e}")
+        async with state_lock:
+            casambi_instance = None
         return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
         logger.error(f"Connection failed: {e}", exc_info=True)
         async with state_lock:
+            casambi_instance = None
             connection_status["connected"] = False
             connection_status["error"] = str(e)
         return jsonify({"success": False, "error": str(e)}), 500
@@ -260,6 +268,9 @@ async def control_unit(unit_id):
             logger.warning(f"Control request for unit {unit_id} while not connected")
             return jsonify({"success": False, "error": "Not connected"}), 400
         unit = units_cache.get(unit_id)
+        if not unit:
+            logger.warning(f"Unit {unit_id} not found for control")
+            return jsonify({"success": False, "error": "Unit not found"}), 404
     try:
         data = await request.get_json()
         if not data:
@@ -279,10 +290,6 @@ async def control_unit(unit_id):
             logger.warning(f"Invalid control type: {control_type_str}")
             return jsonify({"success": False, "error": f"Invalid control type: {control_type_str}"}), 400
 
-        if not unit:
-            logger.warning(f"Unit {unit_id} not found for control")
-            return jsonify({"success": False, "error": "Unit not found"}), 404
-
         logger.info(f"Sending {control_type_str}={value} to unit {unit.name} ({unit_id})")
         await casambi_instance.setControl(unit, control_type, value)
         logger.debug(f"Control command sent successfully")
@@ -294,49 +301,37 @@ async def control_unit(unit_id):
     except Exception as e:
         logger.error(f"Control command failed for unit {unit_id}: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
-@app.get('/api/poll-state')
-async def poll_state():
-    """Poll current state of all units."""
-    # State updates are now handled directly in callbacks with lock protection
-    # Just return current state under lock
-    async with state_lock:
-        if not connection_status["connected"]:
-            logger.warning("Poll state request while not connected")
-            return jsonify({"success": False, "error": "Not connected"}), 400
-        serialized = {uid: serialize_unit(u) for uid, u in units_cache.items()}
-        logger.debug(f"Poll state: returning {len(serialized)} units")
-    return jsonify({"success": True, "data": serialized})
 
-@app.post('/api/poll-toggle')
-async def toggle_polling():
-    """Toggle polling state."""
-    global polling_enabled
-    try:
-        data = await request.get_json()
-        if not data:
-            logger.warning("Poll toggle request missing data")
-            return jsonify({"success": False, "error": "Request data is required"}), 400
-        
-        enabled = data.get('enabled', False)
-        polling_enabled = bool(enabled)
-        logger.info(f"Polling {'enabled' if polling_enabled else 'disabled'}")
-        return jsonify({"success": True, "data": {"polling_enabled": polling_enabled}})
-    except Exception as e:
-        logger.error(f"Poll toggle failed: {e}", exc_info=True)
-        return jsonify({"success": False, "error": str(e)}), 400
 
 async def cleanup():
     """Clean up resources on shutdown."""
-    global casambi_instance, queue_task
+    global casambi_instance, queue_task, shutdown_event
     logger.info("Starting cleanup...")
     
-    # Cancel the queue processing task
+    # Signal the queue processor to stop
+    if shutdown_event and not shutdown_event.is_set():
+        shutdown_event.set()
+        logger.debug("Shutdown event set, queue processor will exit")
+    
+    # Wait for the queue processing task to finish
     if queue_task:
-        queue_task.cancel()
         try:
             await queue_task
+            logger.debug("Queue task completed successfully")
         except asyncio.CancelledError:
-            logger.debug("Queue task cancelled successfully")
+            logger.debug("Queue task was cancelled")
+        except Exception as e:
+            logger.error(f"Error waiting for queue task: {e}")
+    
+    # Drain any remaining items in the queue
+    if state_queue:
+        while not state_queue.empty():
+            try:
+                state_queue.get_nowait()
+                state_queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+        logger.debug("Queue drained")
     
     # Disconnect from Casambi
     if casambi_instance:
@@ -357,10 +352,9 @@ async def shutdown_handler():
         shutdown_event.set()
 
 async def main():
-    global state_queue, queue_task, shutdown_event
+    global queue_task, shutdown_event
     
-    # Initialize the async queue and background task
-    state_queue = asyncio.Queue()
+    # Initialize the background task for processing the queue
     queue_task = asyncio.create_task(process_state_queue())
     
     # Initialize shutdown event for graceful shutdown
