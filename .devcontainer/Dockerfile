@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     libdbus-1-dev \
     pkg-config \
     bluez \
+    iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
 # Install pipenv

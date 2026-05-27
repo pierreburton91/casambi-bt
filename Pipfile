@@ -13,6 +13,7 @@ quart = "*"
 quart-cors = "*"
 pyobjc = {version = "*", sys_platform = "== 'darwin'"}
 pyobjc-core = {version = "*", sys_platform = "== 'darwin'"}
+aioesphomeapi = ">=45.0.0"
 
 [dev-packages]
 black = "*"

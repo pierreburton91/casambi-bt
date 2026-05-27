@@ -14,6 +14,7 @@ from CasambiBt._switch import SwitchEvent
 from ._cache import Cache
 from ._client import CasambiClient, ConnectionState, IncomingPacketType
 from ._network import Network
+from ._transport import BluetoothTransport
 from ._operation import OpCode, OperationsContext
 from ._unit import Group, Scene, Unit, UnitControlType, UnitState
 from .errors import ConnectionStateError, ProtocolError, ReadOnlyControlError
@@ -30,6 +31,7 @@ class Casambi:
         self,
         httpClient: AsyncClient | None = None,
         cachePath: Path | None = None,
+        transport: BluetoothTransport | None = None,
     ) -> None:
         self._casaClient: CasambiClient | None = None
         self._casaNetwork: Network | None = None
@@ -44,6 +46,7 @@ class Casambi:
         self._httpClient = httpClient
 
         self._cache = Cache(cachePath)
+        self._transport = transport
 
     def _checkNetwork(self) -> None:
         if not self._casaNetwork or not self._casaNetwork._networkRevision:
@@ -105,12 +108,14 @@ class Casambi:
         addr_or_device: str | BLEDevice,
         password: str,
         forceOffline: bool = False,
+        transport: BluetoothTransport | None = None,
     ) -> None:
         """Connect and authenticate to a network.
 
         :param addr: The MAC address of the network or a BLEDevice. Use `discover` to find the address of a network.
         :param password: The password for the network.
         :param forceOffline: Whether to avoid contacting the casambi servers.
+        :param transport: Optional transport to use. If None, uses the instance transport or default from environment.
         :raises AuthenticationError: The supplied password is invalid.
         :raises ProtocolError: The network did not follow the expected protocol.
         :raises NetworkNotFoundError: No network was found under the supplied address.
@@ -148,11 +153,15 @@ class Casambi:
 
         await self._casaNetwork.update(forceOffline)
 
+        # Use provided transport or instance transport
+        actual_transport = transport or self._transport
+
         self._casaClient = CasambiClient(
             addr_or_device,
             self._dataCallback,
             self._disconnectCallback,
             self._casaNetwork,
+            transport=actual_transport,
         )
         await self._connectClient()
 
@@ -391,7 +400,7 @@ class Casambi:
             raise ReadOnlyControlError(
                 "Sensors are read-only. Cannot set a sensor value."
             )
-        
+
         # For individual units, check if the control is supported and not read-only
         if isinstance(target, Unit):
             control = target.unitType.get_control(control_type)

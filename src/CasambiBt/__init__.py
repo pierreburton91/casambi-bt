@@ -5,6 +5,8 @@
 
 from ._casambi import Casambi
 from ._discover import discover
+from ._transport import BluetoothTransport, TransportConnection
+from ._transport_factory import get_transport
 from ._unit import (
     ColorSource,
     DeviceRole,

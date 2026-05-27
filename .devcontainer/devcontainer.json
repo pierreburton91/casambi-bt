@@ -8,7 +8,8 @@
     "context": ".."
   },
   "remoteEnv": {
-    "MISTRAL_API_KEY": "${localEnv:MISTRAL_API_KEY}"
+    "MISTRAL_API_KEY": "${localEnv:MISTRAL_API_KEY}",
+    "ESP_HOME_HOSTNAME": "${localEnv:ESP_HOME_HOSTNAME}"
   },
 
   // Configure tool-specific properties.
