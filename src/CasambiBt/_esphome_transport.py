@@ -41,7 +41,6 @@ class ESPHomeTransport(BluetoothTransport):
         self,
         host: str,
         port: int = 6053,
-        username: str | None = None,
         password: str | None = None,
         noise_psk: str | None = None,
     ):
@@ -52,7 +51,6 @@ class ESPHomeTransport(BluetoothTransport):
             )
         self._host = host
         self._port = port
-        self._username = username
         self._password = password
         self._noise_psk = noise_psk
         self._api: APIClient | None = None
@@ -60,70 +58,101 @@ class ESPHomeTransport(BluetoothTransport):
 
     async def _get_api(self) -> APIClient:
         """Get or create the API client connection."""
+        _LOGGER.debug(f"Getting API client for host={self._host}, port={self._port}")
         if self._api is None or not self._api.is_connected:
+            _LOGGER.debug("Creating new API client connection")
             self._api = APIClient(
                 self._host,
                 self._port,
-                username=self._username,
                 password=self._password,
                 noise_psk=self._noise_psk,
             )
             try:
+                _LOGGER.debug(f"Connecting to ESPHome at {self._host}:{self._port}")
                 await self._api.connect()
+                _LOGGER.debug("Successfully connected to ESPHome")
             except Exception as e:
                 raise BluetoothError(f"Failed to connect to ESPHome at {self._host}:{self._port}: {e}") from e
+        else:
+            _LOGGER.debug("Reusing existing API client connection")
         return self._api
 
     async def discover(self, timeout: float = 10.0) -> list[BLEDevice]:
         """Scan for Casambi devices via ESPHome Bluetooth Proxy."""
+        _LOGGER.debug(f"Starting discovery with timeout={timeout}s")
         api = await self._get_api()
 
         discovered_devices: list[BLEDevice] = []
+        advertisement_count = 0  # Track total advertisements for debugging
+        _LOGGER.debug("Initializing advertisement handler")
 
         def handle_advertisement(adv: BluetoothLEAdvertisement) -> None:
             """Handle a BLE advertisement from ESPHome."""
-            # Check if this device advertises the Casambi service UUID
-            # ESPHome provides service_uuids as a list of strings
+            nonlocal advertisement_count
+            advertisement_count += 1
+            # Log ALL advertisements for debugging
+            _LOGGER.debug(f"RECEIVED ADVERTISEMENT: address={adv.address}, name={adv.name or 'None'}, rssi={adv.rssi}")
+            
+            # Log all available data
+            if hasattr(adv, 'service_uuids') and adv.service_uuids:
+                _LOGGER.debug(f"  service_uuids={adv.service_uuids}")
+            if hasattr(adv, 'manufacturer_data') and adv.manufacturer_data:
+                _LOGGER.debug(f"  manufacturer_data_ids={list(adv.manufacturer_data.keys())}")
+            if hasattr(adv, 'service_data') and adv.service_data:
+                _LOGGER.debug(f"  service_data_uuids={list(adv.service_data.keys())}")
+            
+            # Check for Casambi devices: either service UUID or manufacturer data 963
+            is_casambi = False
+            
+            # Check service UUID
             if hasattr(adv, 'service_uuids') and adv.service_uuids:
                 if CASA_UUID.lower() in [uuid.lower() for uuid in adv.service_uuids]:
-                    # Also check for manufacturer data 963 (Casambi)
-                    if hasattr(adv, 'manufacturer_data'):
-                        for mfg_id, _mfg_data in adv.manufacturer_data.items():
-                            if mfg_id == 963:
-                                device = BLEDevice(
-                                    address=adv.address,
-                                    name=adv.name or "Casambi Network",
-                                    details={},
-                                    rssi=adv.rssi,
-                                )
-                                discovered_devices.append(device)
-                                _LOGGER.debug(f"Discovered Casambi device: {adv.name} at {adv.address}")
-                                break
+                    _LOGGER.debug(f"  -> MATCHES Casambi by service UUID: {CASA_UUID}")
+                    is_casambi = True
+            
+            # Check manufacturer data 963 (Casambi)
+            if not is_casambi and hasattr(adv, 'manufacturer_data'):
+                if 963 in adv.manufacturer_data:
+                    _LOGGER.debug(f"  -> MATCHES Casambi by manufacturer ID: 963")
+                    is_casambi = True
+            
+            if is_casambi:
+                device = BLEDevice(
+                    address=adv.address,
+                    name=adv.name or "Casambi Network",
+                    details={},
+                    rssi=adv.rssi,
+                )
+                discovered_devices.append(device)
+                _LOGGER.debug(f"  => CASAMBI DEVICE ADDED to results")
+            else:
+                _LOGGER.debug(f"  => NOT Casambi, skipped")
 
         # Subscribe to advertisements
-        try:
-            self._scan_subscription = aioesphomeapi.APIClient.subscribe_bluetooth_le_advertisements(
-                api, handle_advertisement
-            )
-        except AttributeError:
-            # Fallback for older aioesphomeapi versions
-            self._scan_subscription = api.subscribe_bluetooth_le_advertisements(
-                handle_advertisement
-            )
+        _LOGGER.debug("Subscribing to BLE advertisements")
+        self._scan_subscription = api.subscribe_bluetooth_le_advertisements(
+            handle_advertisement
+        )
+        _LOGGER.debug("Advertisement subscription active")
 
         # Enable active scanning
         try:
-            await api.bluetooth_scanner_set_mode(
+            _LOGGER.debug("Setting scanner mode to ACTIVE")
+            api.bluetooth_scanner_set_mode(
                 aioesphomeapi.BluetoothScannerMode.ACTIVE
             )
+            _LOGGER.debug("Scanner mode set successfully")
         except Exception as e:
             _LOGGER.warning(f"Could not set scanner mode: {e}")
 
         # Wait for advertisements
+        _LOGGER.debug(f"Waiting {timeout}s for advertisements...")
         await asyncio.sleep(timeout)
+        _LOGGER.debug(f"Scan complete. Received {advertisement_count} advertisement(s), {len(discovered_devices)} Casambi device(s) found")
 
         # Clean up
         if self._scan_subscription:
+            _LOGGER.debug("Unsubscribing from advertisements")
             self._scan_subscription()
             self._scan_subscription = None
 

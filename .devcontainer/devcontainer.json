@@ -7,10 +7,7 @@
     "dockerfile": "Dockerfile",
     "context": ".."
   },
-  "remoteEnv": {
-    "MISTRAL_API_KEY": "${localEnv:MISTRAL_API_KEY}",
-    "ESP_HOME_HOSTNAME": "${localEnv:ESP_HOME_HOSTNAME}"
-  },
+  "runArgs": ["--env-file", "${localWorkspaceFolder}/.env"],
 
   // Configure tool-specific properties.
   "customizations": {
@@ -36,8 +33,9 @@
   ],
 
   // This installs dependencies and makes the local package importable in the venv.
-    // Then run pipenv shell to activate the venv and start working.
-  "postCreateCommand": "bash .devcontainer/setup.sh"
+  // Then run pipenv shell to activate the venv and start working.
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "bash .devcontainer/resolve_esphome_ip.sh"
 
   // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
   // "remoteUser": "root"

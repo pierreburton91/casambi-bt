@@ -11,7 +11,6 @@ RUN apt-get update && apt-get install -y \
     libdbus-1-dev \
     pkg-config \
     bluez \
-    iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
 # Install pipenv
@@ -34,14 +33,17 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y \
     git \
     bluez \
+    iputils-ping \
+    dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed Python packages from builder stage
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
+RUN echo "[[ -f /root/.esphome_env ]] && source /root/.esphome_env" >> /root/.bashrc
+
 # Set default working directory (will be overridden by devcontainer mount)
 WORKDIR /workspaces/casambi-bt
 
-# Default command
 CMD ["python"]
