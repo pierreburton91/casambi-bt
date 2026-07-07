@@ -8,6 +8,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from typing import Any
+from uuid import UUID
 
 from bleak.backends.device import BLEDevice
 
@@ -20,14 +21,64 @@ _LOGGER = logging.getLogger(__name__)
 # Try to import aioesphomeapi, but make it optional
 try:
     import aioesphomeapi
-    from aioesphomeapi import BluetoothLEAdvertisement
+    from aioesphomeapi import BluetoothLERawAdvertisementsResponse
     from aioesphomeapi.client import APIClient
 
     ESPHOME_AVAILABLE = True
 except ImportError:
     ESPHOME_AVAILABLE = False
     APIClient = None  # type: ignore[misc, assignment]
-    BluetoothLEAdvertisement = None  # type: ignore[misc, assignment]
+    BluetoothLERawAdvertisementsResponse = None
+
+
+def _int_to_mac(address: int) -> str:
+    """Convert an ESPHome integer BLE address to a colon-separated MAC string."""
+    return ":".join(f"{b:02X}" for b in address.to_bytes(6, "big"))
+
+
+def _extract_network_address(manufacturer_payload: bytes) -> str | None:
+    """Extract a mesh's persistent network address from its Casambi manufacturer data.
+
+    Any unit in a Casambi mesh can advertise on the network's behalf under its
+    own outer BLE address, but embeds the mesh's fixed identity - the one
+    Casambi's cloud API keys network lookups on - at a fixed offset in the
+    manufacturer data payload. Returns None if the payload is too short to
+    contain that field (e.g. an unrecognized/older advertisement format).
+    """
+    if len(manufacturer_payload) < 18:
+        return None
+    return ":".join(f"{b:02X}" for b in manufacturer_payload[12:18])
+
+
+def _parse_ad_structures(data: bytes) -> tuple[list[str], dict[int, bytes]]:
+    """Parse raw BLE advertisement payload into service UUIDs and manufacturer data.
+
+    ESPHome's raw advertisement mode hands over the undecoded BLE AD structures
+    (a sequence of [length][type][payload]) instead of pre-parsed fields, so this
+    mirrors the subset of decoding CasambiBt actually needs (service UUIDs and
+    manufacturer data) to identify Casambi devices.
+    """
+    service_uuids: list[str] = []
+    manufacturer_data: dict[int, bytes] = {}
+    i = 0
+    while i < len(data):
+        length = data[i]
+        if length == 0 or i + 1 + length > len(data):
+            break
+        ad_type = data[i + 1]
+        payload = data[i + 2 : i + 1 + length]
+        if ad_type in (0x02, 0x03):  # 16-bit service UUIDs
+            for j in range(0, len(payload) - 1, 2):
+                uuid16 = int.from_bytes(payload[j : j + 2], "little")
+                service_uuids.append(f"0000{uuid16:04x}-0000-1000-8000-00805f9b34fb")
+        elif ad_type in (0x06, 0x07):  # 128-bit service UUIDs
+            for j in range(0, len(payload) - 15, 16):
+                service_uuids.append(str(UUID(bytes=payload[j : j + 16][::-1])))
+        elif ad_type == 0xFF and len(payload) >= 2:  # manufacturer specific data
+            company_id = int.from_bytes(payload[0:2], "little")
+            manufacturer_data[company_id] = bytes(payload[2:])
+        i += 1 + length
+    return service_uuids, manufacturer_data
 
 
 class ESPHomeTransport(BluetoothTransport):
@@ -82,56 +133,50 @@ class ESPHomeTransport(BluetoothTransport):
         _LOGGER.debug(f"Starting discovery with timeout={timeout}s")
         api = await self._get_api()
 
-        discovered_devices: list[BLEDevice] = []
+        # Keyed by network address (falling back to outer address if the
+        # manufacturer data doesn't carry one) so that multiple relay units
+        # belonging to the same mesh collapse into a single discovered entry.
+        discovered_devices: dict[str, BLEDevice] = {}
         advertisement_count = 0  # Track total advertisements for debugging
         _LOGGER.debug("Initializing advertisement handler")
 
-        def handle_advertisement(adv: BluetoothLEAdvertisement) -> None:
-            """Handle a BLE advertisement from ESPHome."""
+        def handle_raw_advertisements(
+            response: BluetoothLERawAdvertisementsResponse,
+        ) -> None:
+            """Handle a batch of raw BLE advertisements from ESPHome."""
             nonlocal advertisement_count
-            advertisement_count += 1
-            # Log ALL advertisements for debugging
-            _LOGGER.debug(f"RECEIVED ADVERTISEMENT: address={adv.address}, name={adv.name or 'None'}, rssi={adv.rssi}")
-            
-            # Log all available data
-            if hasattr(adv, 'service_uuids') and adv.service_uuids:
-                _LOGGER.debug(f"  service_uuids={adv.service_uuids}")
-            if hasattr(adv, 'manufacturer_data') and adv.manufacturer_data:
-                _LOGGER.debug(f"  manufacturer_data_ids={list(adv.manufacturer_data.keys())}")
-            if hasattr(adv, 'service_data') and adv.service_data:
-                _LOGGER.debug(f"  service_data_uuids={list(adv.service_data.keys())}")
-            
-            # Check for Casambi devices: either service UUID or manufacturer data 963
-            is_casambi = False
-            
-            # Check service UUID
-            if hasattr(adv, 'service_uuids') and adv.service_uuids:
-                if CASA_UUID.lower() in [uuid.lower() for uuid in adv.service_uuids]:
-                    _LOGGER.debug(f"  -> MATCHES Casambi by service UUID: {CASA_UUID}")
-                    is_casambi = True
-            
-            # Check manufacturer data 963 (Casambi)
-            if not is_casambi and hasattr(adv, 'manufacturer_data'):
-                if 963 in adv.manufacturer_data:
-                    _LOGGER.debug(f"  -> MATCHES Casambi by manufacturer ID: 963")
-                    is_casambi = True
-            
-            if is_casambi:
-                device = BLEDevice(
-                    address=adv.address,
-                    name=adv.name or "Casambi Network",
-                    details={},
-                    rssi=adv.rssi,
+            for adv in response.advertisements:
+                advertisement_count += 1
+                service_uuids, manufacturer_data = _parse_ad_structures(bytes(adv.data))
+                _LOGGER.debug(
+                    f"RECEIVED ADVERTISEMENT: address={adv.address}, rssi={adv.rssi}, "
+                    f"service_uuids={service_uuids}, manufacturer_ids={list(manufacturer_data.keys())}"
                 )
-                discovered_devices.append(device)
-                _LOGGER.debug(f"  => CASAMBI DEVICE ADDED to results")
-            else:
-                _LOGGER.debug(f"  => NOT Casambi, skipped")
 
-        # Subscribe to advertisements
-        _LOGGER.debug("Subscribing to BLE advertisements")
-        self._scan_subscription = api.subscribe_bluetooth_le_advertisements(
-            handle_advertisement
+                # Check for Casambi devices: either service UUID or manufacturer data 963
+                is_casambi = CASA_UUID.lower() in [u.lower() for u in service_uuids] or 963 in manufacturer_data
+
+                if is_casambi:
+                    address = _int_to_mac(adv.address)
+                    network_address = _extract_network_address(manufacturer_data.get(963, b""))
+                    key = network_address or address
+                    if key not in discovered_devices:
+                        discovered_devices[key] = BLEDevice(
+                            address=address,
+                            name="Casambi Network",
+                            details={"network_address": network_address} if network_address else {},
+                            rssi=adv.rssi,
+                        )
+                        _LOGGER.debug(
+                            f"  => CASAMBI DEVICE ADDED to results: {address} "
+                            f"(network_address={network_address})"
+                        )
+
+        # Subscribe to raw advertisements (this ESP32 firmware only emits the
+        # raw batched format, not the legacy per-advertisement decoded one)
+        _LOGGER.debug("Subscribing to raw BLE advertisements")
+        self._scan_subscription = api.subscribe_bluetooth_le_raw_advertisements(
+            handle_raw_advertisements
         )
         _LOGGER.debug("Advertisement subscription active")
 
@@ -156,7 +201,7 @@ class ESPHomeTransport(BluetoothTransport):
             self._scan_subscription()
             self._scan_subscription = None
 
-        return discovered_devices
+        return list(discovered_devices.values())
 
     async def connect(self, device: BLEDevice) -> "ESPHomeTransportConnection":
         """Connect to a Casambi device via ESPHome."""

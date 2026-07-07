@@ -123,8 +123,17 @@ class Casambi:
         :raises BluetoothError: An error occurred in the bluetooth stack.
         """
 
+        network_addr: str | None = None
         if isinstance(addr_or_device, BLEDevice):
             addr = addr_or_device.address
+            # Relay units in a mesh advertise under their own outer address but
+            # embed the mesh's persistent network address (what Casambi's cloud
+            # keys lookups on) in their manufacturer data - see the ESPHome/HA
+            # transports' discover(). Prefer it for the network id below, but
+            # still connect to the outer address since that's the real radio.
+            details = addr_or_device.details
+            if isinstance(details, dict):
+                network_addr = details.get("network_address")
         else:
             # Add colons if necessary.
             if ":" not in addr_or_device:
@@ -137,7 +146,7 @@ class Casambi:
             self._httpClient = AsyncClient()
 
         # Retrieve network information
-        uuid = addr.replace(":", "").lower()
+        uuid = (network_addr or addr).replace(":", "").lower()
         await self._cache.setUuid(uuid)
         self._casaNetwork = Network(uuid, self._httpClient, self._cache)
         await self._casaNetwork.load()

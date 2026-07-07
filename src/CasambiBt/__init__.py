@@ -18,3 +18,34 @@ from ._unit import (
     UnitState,
     UnitType,
 )
+
+# Optionally import transport implementations if available
+try:
+    from ._homeassistant_transport import (
+        HomeAssistantTransport,
+        HomeAssistantTransportConnection,
+    )
+
+    _HOME_ASSISTANT_AVAILABLE = True
+except ImportError:
+    _HOME_ASSISTANT_AVAILABLE = False
+
+__all__ = [
+    "Casambi",
+    "discover",
+    "BluetoothTransport",
+    "TransportConnection",
+    "get_transport",
+    "ColorSource",
+    "DeviceRole",
+    "Group",
+    "Scene",
+    "Unit",
+    "UnitControl",
+    "UnitControlType",
+    "UnitState",
+    "UnitType",
+]
+
+if _HOME_ASSISTANT_AVAILABLE:
+    __all__.extend(["HomeAssistantTransport", "HomeAssistantTransportConnection"])

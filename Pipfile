@@ -11,9 +11,11 @@ httpx = ">=0.25"
 anyio = {version = ">=4.12.0", markers = "sys_platform != 'darwin' or sys_platform == 'darwin'"}
 quart = "*"
 quart-cors = "*"
-pyobjc = {version = "*", sys_platform = "== 'darwin'"}
 pyobjc-core = {version = "*", sys_platform = "== 'darwin'"}
+pyobjc-framework-corebluetooth = {version = "*", sys_platform = "== 'darwin'"}
+pyobjc-framework-libdispatch = {version = "*", sys_platform = "== 'darwin'"}
 aioesphomeapi = ">=45.0.0"
+homeassistant-api = "*"
 
 [dev-packages]
 black = "*"
@@ -24,6 +26,8 @@ build = "*"
 twine = "*"
 pytest = "*"
 pytest-asyncio = "*"
+aioesphomeapi = ">=45.0.0"
+homeassistant-api = ">=4.0.0"
 casambi-bt = {path = ".", editable = true}
 
 [requires]

@@ -7,7 +7,9 @@ const API = {
     status: '/api/status',
     units: '/api/units',
     unitState: (id) => `/api/units/${id}/state`,
-    unitControl: (id) => `/api/units/${id}/control`
+    unitControl: (id) => `/api/units/${id}/control`,
+    transports: '/api/transports',
+    transportDiscover: (type) => `/api/transports/${type}/discover`
 };
 
 // State
@@ -17,7 +19,10 @@ let state = {
     networkName: null,
     networkId: null,
     units: {},
-    pollInterval: null
+    pollInterval: null,
+    availableTransports: {},
+    currentTransport: null,
+    transportConfigs: JSON.parse(localStorage.getItem('transportConfigs') || '{}')
 };
 
 // DOM elements
@@ -32,7 +37,14 @@ const elements = {
     networksList: document.getElementById('networks-list'),
     unitsSection: document.getElementById('units-section'),
     unitsGrid: document.getElementById('units-grid'),
-    log: document.getElementById('log')
+    log: document.getElementById('log'),
+    // Transport elements
+    transportSection: document.getElementById('transport-section'),
+    transportStatus: document.getElementById('transport-status'),
+    transportButtons: document.getElementById('transport-buttons'),
+    transportConfig: document.getElementById('transport-config'),
+    configFields: document.getElementById('config-fields'),
+    testConfigBtn: document.getElementById('test-config-btn')
 };
 
 // Storage keys
@@ -79,13 +91,15 @@ function updateUI() {
         elements.status.textContent = 'Disconnected';
     }
 
-    // Buttons
-    elements.discoverBtn.style.display = state.connected ? 'none' : 'inline-block';
-    elements.refreshBtn.style.display = state.connected ? 'inline-block' : 'none';
+    // Buttons - only show discover/connect if we have a transport selected
+    const hasTransport = !!state.currentTransport;
+    
+    elements.discoverBtn.style.display = (state.connected || !hasTransport) ? 'none' : 'inline-block';
+    elements.refreshBtn.style.display = (state.connected && hasTransport) ? 'inline-block' : 'none';
     elements.disconnectBtn.style.display = state.connected ? 'inline-block' : 'none';
 
-    // Connection controls
-    const showConnection = state.discoveredNetworks.length > 0 && !state.connected;
+    // Connection controls - only show if we have a transport and networks
+    const showConnection = state.discoveredNetworks.length > 0 && !state.connected && hasTransport;
     elements.networkSelect.style.display = showConnection ? 'inline-block' : 'none';
     elements.passwordInput.style.display = showConnection ? 'inline-block' : 'none';
     elements.connectBtn.style.display = showConnection ? 'inline-block' : 'none';
@@ -401,10 +415,24 @@ function sendControl(unitId, controlType, value) {
 
 // Discover networks
 async function discoverNetworks() {
-    log('Discovering networks...');
+    if (!state.currentTransport) {
+        log('Please select a transport first', true);
+        return;
+    }
+    
+    saveCurrentConfig();
+    const config = state.transportConfigs[state.currentTransport] || {};
+    
+    log(`Discovering networks with ${state.currentTransport}...`);
     elements.discoverBtn.disabled = true;
+    
     try {
-        state.discoveredNetworks = await apiCall('GET', API.networks);
+        // Use transport-specific discovery if a transport is selected
+        const result = await apiCall('POST', 
+            API.transportDiscover(state.currentTransport),
+            {config}
+        );
+        state.discoveredNetworks = result;
         populateNetworks();
         log(`Found ${state.discoveredNetworks.length} network(s)`);
     } catch (error) {
@@ -416,6 +444,14 @@ async function discoverNetworks() {
 
 // Connect to network
 async function connectNetwork() {
+    if (!state.currentTransport) {
+        log('Please select a transport first', true);
+        return;
+    }
+    
+    saveCurrentConfig();
+    const config = state.transportConfigs[state.currentTransport] || {};
+    
     const address = elements.networkSelect.value;
     const password = elements.passwordInput.value;
     if (!address) {
@@ -423,14 +459,24 @@ async function connectNetwork() {
         return;
     }
 
-    log(`Connecting to ${address}...`);
+    log(`Connecting to ${address} with ${state.currentTransport}...`);
     elements.connectBtn.disabled = true;
     try {
-        await apiCall('POST', API.connect, { address, password });
+        await apiCall('POST', API.connect, { 
+            address, 
+            password,
+            transport_type: state.currentTransport,
+            transport_config: config
+        });
         log('Connected successfully');
 
         // Save to localStorage for persistence
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ address, password }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ 
+            address, 
+            password,
+            transport_type: state.currentTransport,
+            transport_config: config
+        }));
 
         // Fetch initial units
         await fetchUnits();
@@ -525,9 +571,23 @@ async function tryReconnect() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
         try {
-            const { address, password } = JSON.parse(saved);
+            const { address, password, transport_type, transport_config } = JSON.parse(saved);
+            
+            // If there's a saved transport, select it first
+            if (transport_type && state.availableTransports[transport_type]) {
+                state.currentTransport = transport_type;
+                state.transportConfigs[transport_type] = transport_config || {};
+                renderTransportButtons();
+                renderTransportConfig();
+            }
+            
             log(`Attempting to reconnect to saved network: ${address}`);
-            await apiCall('POST', API.connect, { address, password });
+            await apiCall('POST', API.connect, { 
+                address, 
+                password,
+                transport_type,
+                transport_config: transport_config || {}
+            });
             await updateConnectionStatus();
             await fetchUnits();
             startPolling();
@@ -540,18 +600,234 @@ async function tryReconnect() {
     }
 }
 
+// Transport management functions
+
+async function loadTransports() {
+    try {
+        const transports = await apiCall('GET', API.transports);
+        state.availableTransports = transports;
+        renderTransportButtons();
+        
+        // Select first available transport by default
+        const firstAvailable = Object.keys(transports).find(t => transports[t].available);
+        if (firstAvailable) {
+            selectTransport(firstAvailable);
+        }
+        
+        updateTransportStatus();
+    } catch (error) {
+        log(`Failed to load transports: ${error.message}`, true);
+    }
+}
+
+function renderTransportButtons() {
+    elements.transportButtons.innerHTML = '';
+    
+    Object.entries(state.availableTransports).forEach(([type, info]) => {
+        const btn = document.createElement('button');
+        btn.textContent = info.name;
+        btn.className = 'transport-button';
+        btn.dataset.transportType = type;
+        
+        if (!info.available) {
+            btn.disabled = true;
+            btn.title = `Missing dependency: ${info.missing_dependency || 'unknown'}`;
+        }
+        
+        if (state.currentTransport === type) {
+            btn.classList.add('selected');
+        }
+        
+        btn.addEventListener('click', () => selectTransport(type));
+        elements.transportButtons.appendChild(btn);
+    });
+}
+
+function selectTransport(type) {
+    if (!state.availableTransports[type]) {
+        log(`Transport ${type} not available`, true);
+        return;
+    }
+    
+    if (!state.availableTransports[type].available) {
+        log(`Transport ${type} is not available: missing dependency`, true);
+        return;
+    }
+    
+    state.currentTransport = type;
+    renderTransportButtons();
+    renderTransportConfig();
+    updateTransportStatus();
+    updateUI();
+    log(`Selected transport: ${type}`);
+}
+
+function renderTransportConfig() {
+    if (!state.currentTransport) {
+        elements.transportConfig.style.display = 'none';
+        return;
+    }
+    
+    const info = state.availableTransports[state.currentTransport];
+    elements.configFields.innerHTML = '';
+    
+    // Create input fields for each config field
+    const config = state.transportConfigs[state.currentTransport] || {};
+    
+    // Get environment variable defaults if available
+    const envDefaults = info.env_defaults || {};
+    
+    info.config_fields.forEach(field => {
+        const configKey = `${state.currentTransport}.${field}`;
+        const div = document.createElement('div');
+        div.className = 'config-field';
+        
+        const label = document.createElement('label');
+        label.textContent = field + ':';
+        
+        // Determine input type based on field name
+        let inputType = 'text';
+        if (field === 'token' || field === 'noise_psk' || field === 'password') {
+            inputType = 'password';
+        } else if (field === 'ssl') {
+            inputType = 'checkbox';
+        } else if (field === 'port' || field === 'esphome_port') {
+            inputType = 'number';
+        }
+        
+        const input = document.createElement('input');
+        input.type = inputType;
+        input.id = `config-${field}`;
+        
+        if (inputType === 'checkbox') {
+            // For checkboxes: use config value, or default, or false
+            input.checked = config[field] !== false;
+        } else {
+            // For text inputs: use config value, or env var, or default, or empty string
+            // Priority: saved config > env var > hardcoded default > empty
+            let value = config[field] || '';
+            
+            // If no saved config value, try environment variable
+            if (!value && envDefaults[field]) {
+                value = envDefaults[field];
+            }
+            
+            input.value = value;
+        }
+        
+        // Set default values (hardcoded fallback)
+        const defaults = {
+            'port': state.currentTransport === 'homeassistant' ? '8123' : '6053',
+            'esphome_port': '6053',
+            'ssl': true,
+        };
+        
+        if (defaults[field] !== undefined && config[field] === undefined && !envDefaults[field]) {
+            if (field === 'ssl') {
+                input.checked = defaults[field];
+            } else {
+                input.value = defaults[field];
+            }
+        }
+        
+        div.appendChild(label);
+        div.appendChild(input);
+        elements.configFields.appendChild(div);
+    });
+    
+    // Show save and test buttons for transports that need config
+    const needsConfig = info.config_fields.length > 0;
+    elements.testConfigBtn.style.display = needsConfig ? 'inline-block' : 'none';
+    elements.transportConfig.style.display = needsConfig ? 'block' : 'none';
+}
+
+function saveCurrentConfig() {
+    if (!state.currentTransport) return;
+    
+    const info = state.availableTransports[state.currentTransport];
+    const config = {};
+    
+    info.config_fields.forEach(field => {
+        const input = document.getElementById(`config-${field}`);
+        if (input) {
+            if (input.type === 'checkbox') {
+                config[field] = input.checked;
+            } else {
+                config[field] = input.value;
+            }
+        }
+    });
+    
+    state.transportConfigs[state.currentTransport] = config;
+    localStorage.setItem('transportConfigs', JSON.stringify(state.transportConfigs));
+    log(`Saved configuration for ${state.currentTransport}`);
+}
+
+async function testTransportConfig() {
+    if (!state.currentTransport) return;
+    
+    saveCurrentConfig();
+    const config = state.transportConfigs[state.currentTransport] || {};
+    
+    log(`Testing ${state.currentTransport} configuration...`);
+    elements.testConfigBtn.disabled = true;
+    
+    try {
+        const response = await fetch(
+            API.transportDiscover(state.currentTransport),
+            {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({config})
+            }
+        );
+        const result = await response.json();
+        
+        if (result.success) {
+            log(`Test successful! Found ${result.data.length} device(s)`);
+            // Auto-populate network dropdown if successful
+            state.discoveredNetworks = result.data;
+            populateNetworks();
+        } else {
+            log(`Test failed: ${result.error}`, true);
+        }
+    } catch (error) {
+        log(`Test failed: ${error.message}`, true);
+    } finally {
+        elements.testConfigBtn.disabled = false;
+    }
+}
+
+function updateTransportStatus() {
+    if (state.currentTransport) {
+        const info = state.availableTransports[state.currentTransport];
+        if (info && info.available) {
+            elements.transportStatus.className = 'status connected';
+            elements.transportStatus.textContent = `Using: ${info.name}`;
+        } else {
+            elements.transportStatus.className = 'status error';
+            elements.transportStatus.textContent = `Transport ${state.currentTransport} not available`;
+        }
+    } else {
+        elements.transportStatus.className = 'status disconnected';
+        elements.transportStatus.textContent = 'Select a transport to begin';
+    }
+}
+
 // Event listeners
 function setupEventListeners() {
     elements.discoverBtn.addEventListener('click', discoverNetworks);
     elements.refreshBtn.addEventListener('click', discoverNetworks);
     elements.connectBtn.addEventListener('click', connectNetwork);
     elements.disconnectBtn.addEventListener('click', disconnectNetwork);
+    elements.testConfigBtn.addEventListener('click', testTransportConfig);
 }
 
 // Initialize
 async function init() {
     log('Initializing...');
     setupEventListeners();
+    await loadTransports();
     updateUI();
     await tryReconnect();
     log('Ready');

@@ -5,6 +5,10 @@ requires = [
 ]
 build-backend = "setuptools.build_meta"
 
+[project]
+# Note: Most metadata is in setup.cfg, but we can add optional dependencies here too
+# for pip tools that prefer pyproject.toml
+
 [tool.isort]
 profile = "black"
 

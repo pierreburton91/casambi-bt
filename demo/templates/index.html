@@ -7,7 +7,7 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: Arial, sans-serif; padding: 20px; max-width: 1400px; margin: 0 auto; }
-        h1, h2 { margin-bottom: 15px; }
+        h1, h2, h3 { margin-bottom: 15px; }
         section { margin-bottom: 30px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
         .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
         .status.connected { background: #d4edda; color: #155724; }
@@ -28,10 +28,31 @@
         .log { margin-top: 20px; padding: 10px; background: #f5f5f5; border: 1px solid #ccc; max-height: 200px; overflow-y: auto; }
         .log-entry { margin: 3px 0; font-size: 12px; }
         .log-entry.error { color: red; }
+        /* Transport selection styles */
+        .transport-buttons { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+        .transport-buttons button { flex: 1; min-width: 150px; }
+        .transport-config { margin-top: 15px; padding: 10px; background: #f5f5f5; border-radius: 5px; }
+        .config-field { margin: 8px 0; }
+        .config-field label { display: inline-block; width: 120px; }
+        .transport-button { transition: all 0.2s; }
+        .transport-button.selected { background: #007bff; color: white; }
+        .transport-button:hover:not(:disabled) { background: #0056b3; color: white; }
+        .transport-button:disabled { opacity: 0.5; cursor: not-allowed; }
     </style>
 </head>
 <body>
     <h1>Casambi BT Demo</h1>
+
+    <section id="transport-section">
+        <h2>Transport Layer Selection</h2>
+        <div id="transport-status" class="status disconnected">Select a transport to begin</div>
+        <div id="transport-buttons" class="transport-buttons"></div>
+        <div id="transport-config" class="transport-config" style="display: none;">
+            <h3>Configuration</h3>
+            <div id="config-fields"></div>
+            <button id="test-config-btn" style="display: none; margin-top: 10px;">Test Connection</button>
+        </div>
+    </section>
 
     <section id="network-section">
         <h2>Network</h2>

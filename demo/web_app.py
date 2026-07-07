@@ -158,7 +158,7 @@ def serialize_unit(unit: Unit) -> dict[str, Any]:
 
 @app.get('/api/networks')
 async def get_networks() -> ResponseReturnValue:
-    """Discover available Casambi networks."""
+    """Discover available Casambi networks using default transport."""
     global discovered_devices
     try:
         logger.info("Starting network discovery")
@@ -171,14 +171,164 @@ async def get_networks() -> ResponseReturnValue:
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# Transport-related endpoints
+
+@app.get('/api/transports')
+async def get_available_transports() -> ResponseReturnValue:
+    """List available transport types with their availability."""
+    import os
+
+    transports = {}
+
+    # Bleak is always available (but may not work on all platforms)
+    transports['bleak'] = {
+        'name': 'Bleak (Local Bluetooth)',
+        'available': True,
+        'config_fields': [],
+        'description': 'Uses local Bluetooth adapter (bleak library)',
+    }
+
+    # Check ESPHome
+    try:
+        import aioesphomeapi
+        transports['esphome'] = {
+            'name': 'ESPHome Proxy',
+            'available': True,
+            'config_fields': ['host', 'port', 'noise_psk'],
+            'description': 'Uses ESPHome Bluetooth Proxy device directly',
+            # Add environment variable defaults for ESPHome
+            'env_defaults': {
+                'host': os.environ.get('ESPHOME_HOST', ''),
+                'port': os.environ.get('ESPHOME_PORT', ''),
+                'noise_psk': os.environ.get('ESPHOME_NOISE_PSK', '')
+            }
+        }
+    except ImportError:
+        transports['esphome'] = {
+            'name': 'ESPHome Proxy',
+            'available': False,
+            'missing_dependency': 'aioesphomeapi',
+            'config_fields': ['host', 'port', 'noise_psk'],
+            'description': 'Uses ESPHome Bluetooth Proxy device directly',
+            # Still provide env defaults even if dependency is missing
+            'env_defaults': {
+                'host': os.environ.get('ESPHOME_HOST', ''),
+                'port': os.environ.get('ESPHOME_PORT', ''),
+                'noise_psk': os.environ.get('ESPHOME_NOISE_PSK', '')
+            }
+        }
+
+    # Check Home Assistant
+    try:
+        import homeassistant_api
+        transports['homeassistant'] = {
+            'name': 'Home Assistant',
+            'available': True,
+            'config_fields': ['host', 'port', 'esphome_host', 'esphome_port', 'token', 'ssl', 'verify_ssl', 'esphome_entity', 'noise_psk'],
+            'description': 'Validates against Home Assistant, then connects directly to an ESPHome Bluetooth Proxy',
+            # Add environment variable defaults for Home Assistant
+            'env_defaults': {
+                'host': os.environ.get('HOME_ASSISTANT_HOST', os.environ.get('HA_HOST', '')),
+                'token': os.environ.get('HOME_ASSISTANT_TOKEN', os.environ.get('HA_TOKEN', '')),
+                'port': os.environ.get('HOME_ASSISTANT_PORT', os.environ.get('HA_PORT', '')),
+                'ssl': os.environ.get('HOME_ASSISTANT_SSL', 'true'),
+                'verify_ssl': os.environ.get('HOME_ASSISTANT_VERIFY_SSL', 'true'),
+                'esphome_host': os.environ.get('ESPHOME_HOST', os.environ.get('ESP_HOME_HOSTNAME', '')),
+                'esphome_port': os.environ.get('ESPHOME_PORT', ''),
+            }
+        }
+    except ImportError:
+        transports['homeassistant'] = {
+            'name': 'Home Assistant',
+            'available': False,
+            'missing_dependency': 'homeassistant-api',
+            'config_fields': ['host', 'port', 'esphome_host', 'esphome_port', 'token', 'ssl', 'verify_ssl', 'esphome_entity', 'noise_psk'],
+            'description': 'Validates against Home Assistant, then connects directly to an ESPHome Bluetooth Proxy',
+            # Still provide env defaults even if dependency is missing
+            'env_defaults': {
+                'host': os.environ.get('HOME_ASSISTANT_HOST', os.environ.get('HA_HOST', '')),
+                'token': os.environ.get('HOME_ASSISTANT_TOKEN', os.environ.get('HA_TOKEN', '')),
+                'port': os.environ.get('HOME_ASSISTANT_PORT', os.environ.get('HA_PORT', '')),
+                'ssl': os.environ.get('HOME_ASSISTANT_SSL', 'true'),
+                'verify_ssl': os.environ.get('HOME_ASSISTANT_VERIFY_SSL', 'true'),
+                'esphome_host': os.environ.get('ESPHOME_HOST', os.environ.get('ESP_HOME_HOSTNAME', '')),
+                'esphome_port': os.environ.get('ESPHOME_PORT', ''),
+            }
+        }
+
+    logger.debug(f"Available transports: {list(transports.keys())}")
+    return jsonify({"success": True, "data": transports})
+
+
+@app.post('/api/transports/<transport_type>/discover')
+async def discover_with_transport(transport_type: str) -> ResponseReturnValue:
+    """Discover networks using a specific transport type.
+    
+    Request body should contain transport configuration:
+    - bleak: No config needed
+    - esphome: {host, port?, noise_psk?}
+    - homeassistant: {host, port?, token, esphome_host, esphome_port?, ssl?, verify_ssl?, esphome_entity?, noise_psk?}
+    """
+    global discovered_devices
+    from CasambiBt._transport_factory import get_transport_by_type
+
+    def _str_to_bool(value: Any) -> bool:
+        """Convert string boolean to actual boolean."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in ('true', '1', 'yes', 'on')
+        return bool(value)
+
+    try:
+        data: dict[str, Any] | None = await request.get_json()
+        config: dict[str, Any] = data.get('config', {}) if data else {}
+
+        # Convert string booleans to actual booleans for ssl and verify_ssl
+        if 'ssl' in config:
+            config['ssl'] = _str_to_bool(config['ssl'])
+        if 'verify_ssl' in config:
+            config['verify_ssl'] = _str_to_bool(config['verify_ssl'])
+
+        logger.info(f"Discovering with transport type: {transport_type}")
+
+        transport = get_transport_by_type(transport_type, **config)
+        devices = await transport.discover(timeout=10.0)
+
+        discovered_devices = devices
+        networks = [{"address": d.address, "name": d.name or "Unknown"} for d in devices]
+        logger.info(f"Discovered {len(networks)} networks with {transport_type} transport")
+        return jsonify({"success": True, "data": networks})
+
+    except ImportError as e:
+        logger.error(f"Missing dependency for {transport_type}: {e}")
+        return jsonify({
+            "success": False,
+            "error": f"Missing dependency: {e}"
+        }), 500
+    except ValueError as e:
+        logger.error(f"Invalid configuration for {transport_type}: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Discovery failed for {transport_type}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.post('/api/connect')
 async def connect_network() -> ResponseReturnValue:
-    """Connect to a Casambi network."""
+    """Connect to a Casambi network.
+    
+    Optional parameters:
+    - transport_type: Type of transport to use (bleak, esphome, homeassistant)
+    - transport_config: Configuration for the specified transport
+    """
     global casambi_instance, connection_status, units_cache, discovered_devices
     try:
         data: dict[str, Any] | None = await request.get_json()
         address: str | None = data.get('address') if data else None
         password: str | None = data.get('password') if data else None
+        transport_type: str | None = data.get('transport_type') if data else None
+        transport_config: dict[str, Any] = data.get('transport_config', {}) if data else {}
 
         if not address:
             logger.warning("Connect request missing address")
@@ -192,7 +342,15 @@ async def connect_network() -> ResponseReturnValue:
 
         logger.info(f"Connecting to network: {device.name or device.address}")
 
-        casambi_instance = Casambi()
+        # Create transport if specified, otherwise use default
+        transport = None
+        if transport_type:
+            from CasambiBt._transport_factory import get_transport_by_type
+            transport = get_transport_by_type(transport_type, **transport_config)
+            logger.info(f"Using transport: {transport_type}")
+
+        # Create Casambi instance with the specified transport
+        casambi_instance = Casambi(transport=transport)
         casambi_instance.registerUnitChangedHandler(on_unit_changed)
         casambi_instance.registerDisconnectCallback(on_disconnected)
 
@@ -397,11 +555,11 @@ async def main() -> None:
             signal.signal(signal.SIGTERM, handle_signal)
         logger.debug("Using standard signal handlers")
 
-    logger.info("Starting Casambi BT Demo Web App on http://0.0.0.0:5000")
+    logger.info("Starting Casambi BT Demo Web App on http://0.0.0.0:8080")
 
     try:
         # Run the app and wait for shutdown signal concurrently
-        app_task: asyncio.Task[None] = asyncio.create_task(app.run_task(host='0.0.0.0', port=5000))
+        app_task: asyncio.Task[None] = asyncio.create_task(app.run_task(host='0.0.0.0', port=8080))
 
         # Wait for either the app to finish or shutdown signal
         done, pending = await asyncio.wait(

@@ -19,7 +19,71 @@ This library is available on PyPi:
 pip install casambi-bt
 ```
 
+For specific Bluetooth backends, install the appropriate optional dependency:
+
+```bash
+# For ESPHome Bluetooth Proxy
+pip install casambi-bt[esphome]
+
+# For Home Assistant integration (validates against HA, then connects to an ESPHome proxy)
+pip install casambi-bt[homeassistant]
+
+# For all optional dependencies
+pip install casambi-bt[esphome,homeassistant]
+```
+
 Have a look at `demo.py` for a small example.
+
+### Bluetooth Transports
+
+CasambiBt supports multiple Bluetooth transport backends:
+
+| Transport | Description | Required Package | Configuration |
+|----------|-------------|-----------------|---------------|
+| **bleak** | Local Bluetooth adapter (default) | `bleak` (included) | None |
+| **esphome** | ESPHome Bluetooth Proxy device | `aioesphomeapi` | Host, port, noise_psk |
+| **homeassistant** | Validates connectivity via Home Assistant, then talks directly to a given ESP32 (HA is not in the BLE data path) | `homeassistant-api` | HA host, port, token; ESP32 `esphome_host`, `esphome_port` |
+
+The transport is auto-selected based on environment variables:
+- Set `ESPHOME_IP` to use ESPHome transport directly
+
+Or use the transport factory for explicit selection:
+
+```python
+from CasambiBt._transport_factory import get_transport_by_type
+
+# Create a specific transport
+transport = get_transport_by_type(
+    'homeassistant',
+    host='192.168.1.100',        # Home Assistant host
+    token='your_long_lived_token',
+    esphome_host='192.168.1.50', # the ESP32 running ESPHome (Bluetooth proxy)
+    ssl=True
+)
+
+# Use with discover
+from CasambiBt import discover
+devices = await discover(transport=transport)
+```
+
+### Running the demo
+
+`demo/web_app.py` (run with `python demo/web_app.py`) reads the same transport
+configuration from environment variables - Pipenv auto-loads a `.env` file in
+the project root for `pipenv run`/`pipenv shell`, or you can type these values
+directly into the demo's transport selection UI:
+
+- **esphome**: `ESPHOME_HOST`, `ESPHOME_PORT`, `ESPHOME_NOISE_PSK`
+- **homeassistant**: `HOME_ASSISTANT_HOST`, `HOME_ASSISTANT_PORT`, `HOME_ASSISTANT_TOKEN`,
+  `HOME_ASSISTANT_SSL`, `HOME_ASSISTANT_VERIFY_SSL`, plus `ESPHOME_HOST` (or
+  `ESP_HOME_HOSTNAME`) and `ESPHOME_PORT` for the ESP32 itself
+
+Some ESPHome Bluetooth Proxy devices only forward BLE advertisements to a single
+native-API subscriber at a time. If Home Assistant already has an active
+connection to the ESP32, a second direct connection (e.g. from this demo) may
+see the connection succeed but receive zero advertisements. If discovery finds
+nothing, try temporarily disabling the ESPHome integration for that device in
+Home Assistant first.
 
 ### MacOS
 
