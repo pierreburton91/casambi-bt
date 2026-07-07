@@ -79,6 +79,14 @@ Devices are modeled generically rather than as "lights": `Unit` holds a `UnitTyp
 
 `Casambi.setControl()` is the preferred write API: it dispatches by `UnitControlType` (DIMMER, SLIDER, ONOFF, RGB, TEMPERATURE, ...) and raises `ReadOnlyControlError` for read-only controls (e.g. `SENSOR`) or controls not present/writable on the target. Legacy per-purpose methods (`setLevel`, `setSlider`, `setVertical`, `setColor`, `setTemperature`, `setColorXY`, `setWhite`, `turnOn`) remain for backward compatibility — prefer `setControl()` in new code.
 
+#### Sensor control types and the round-robin group protocol
+
+Beyond the plain `SENSOR` type, `UnitControlType` has `PRESENCE`, `LUX`, `SENSORGROUP`, and `SENSORGROUPVALUE` for sensor-platform-style fixtures (see `doc/fixtures-specs/sensors-platform.json`, `louvers.json`, `screen.json`). `PRESENCE`/`LUX` decode independently onto `UnitState.presence`/`.lux` like any other control. `SENSORGROUP`/`SENSORGROUPVALUE` back a set of named, tagged `SENSOR` controls (`length: 0`, distinguished by `UnitControl.tag`) that share one offset — decoded into `UnitState.sensors: dict[str, int]` keyed by control name.
+
+This group's wire format was confirmed empirically against live device captures (not documented anywhere officially), so it's worth understanding before touching `Unit._decode_tagged_sensor`/`_index_sensor_groups`: **the device reports exactly one tagged sensor's fresh reading per state update, round-robin.** `SENSORGROUP`'s raw value is a 1-based index of which tag just got refreshed (`tag = sensorgroup_raw - 1`); `SENSORGROUPVALUE`'s *entire* raw value (not a bit-slice divided across tags — that was an earlier, incorrect assumption) is that one tag's reading, used as-is with no linear `min`/`max` scaling (unlike `LUX`/plain `SENSOR`, where min/max *are* a scale target). Tags not selected this update simply keep their last known value in `UnitState.sensors` — don't treat a missing update as "zero".
+
+`UnitType.device_role` OR's `PRESENCE`/`LUX`/`SENSORGROUP`/`SENSORGROUPVALUE` into the same branch as `SENSOR` for `DeviceRole.SENSOR` classification, but a device with these controls isn't necessarily role `SENSOR` — `louvers.json` and `screen.json` both carry a `sensorgroup`/tagged-sensor block alongside a `SLIDER`/`DIMMER` and classify as `MOTORIZED_SHADE`/`MOTORIZED_SCREEN` instead. Don't assume `UnitState.sensors` is only populated on `SENSOR`-role units.
+
 ### Error hierarchy (`errors.py`)
 
 All exceptions derive from `CasambiBtError`: `NetworkNotFoundError`, `NetworkUpdateError`, `NetworkOnlineUpdateNeededError`, `AuthenticationError`, `ConnectionStateError`, `BluetoothError`, `ProtocolError`, `UnsupportedProtocolVersion`, `ReadOnlyControlError`.

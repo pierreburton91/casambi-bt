@@ -171,6 +171,26 @@ except ReadOnlyControlError:
     print("Sensor units are read-only and cannot be controlled.")
 ```
 
+#### Reading Sensor Values
+
+Decoded readings are available on `unit.state` after a state update:
+
+```python
+state = sensor_unit.state
+
+state.presence     # int | None - raw occupancy/presence reading
+state.lux          # int | None - ambient light level
+state.sensorgroup  # int | None - raw group-protocol index (see below)
+state.sensors      # dict[str, int] - named readings, e.g. {"Wind Snelheid": 1234}
+```
+
+Some sensor platforms (e.g. wind/rain/light/motion combo boards, or the auxiliary
+temperature/travel-distance sensors on motorized shades) report multiple named readings
+that share a single group of controls, but only send one fresh reading per state update,
+round-robin. `state.sensors` reflects this: each key updates only when that particular
+sensor's turn comes around, and keeps its last known value in between — a key being
+"stale" for a few updates is expected, not a bug.
+
 ### Legacy Device-Specific Methods
 
 Legacy device-specific methods are still available for compatibility, but `setControl()` is the recommended interface.

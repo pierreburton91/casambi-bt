@@ -246,7 +246,7 @@ Unknown packet types are silently ignored. Should log at higher level for debugg
 ### 19. Documentation Issues
 - README references `demo.py` which doesn't exist (should be `demo/web_app.py`)
 - No API documentation for `setControl()` in docstrings
-- Missing examples for sensor handling
+- Missing examples for sensor handling - ✅ DONE (README "Reading Sensor Values")
 - No documentation on error handling patterns
 
 ### 20. Testing Gaps
