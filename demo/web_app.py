@@ -132,12 +132,27 @@ def serialize_unit(unit: Unit) -> dict[str, Any]:
             "sensor": unit.state.sensor,
             "onoff": unit.state.onoff,
             "colorSource": unit.state.colorsource.value if unit.state.colorsource else None,
+            "presence": unit.state.presence,
+            "lux": unit.state.lux,
+            "sensorgroup": unit.state.sensorgroup,
             # Frontend expects these names
             "level": unit.state.dimmer,
             "onOff": unit.state.onoff,
         })
         # Remove None values for cleaner output
         state_dict = {k: v for k, v in state_dict.items() if v is not None}
+
+        if unit.state.sensors:
+            state_dict["sensors"] = dict(unit.state.sensors)
+
+    sensor_details = sorted(
+        (
+            {"name": c.name, "tag": c.tag, "unit": c.unit, "readonly": c.readonly}
+            for c in unit.unitType.controls
+            if c.type == UnitControlType.SENSOR
+        ),
+        key=lambda d: d["tag"] if d["tag"] is not None else float("inf"),
+    )
 
     return {
         "id": str(unit.uuid),
@@ -148,6 +163,7 @@ def serialize_unit(unit: Unit) -> dict[str, Any]:
         "firmwareVersion": unit.firmwareVersion,
         "device_role": unit.unitType.device_role.name,
         "controls": [c.type.name for c in unit.unitType.controls],
+        "sensorDetails": sensor_details,
         "state": state_dict,
         "online": unit.online,
         "is_on": unit.is_on,

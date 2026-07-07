@@ -43,6 +43,18 @@ class UnitControlType(Enum):
     SENSOR = 9
     """A sensor value of the light."""
 
+    PRESENCE = 10
+    """Raw presence/occupancy sensor reading. Semantics beyond the raw bit value are not reverse engineered."""
+
+    LUX = 11
+    """Ambient light level, linearly scaled like SENSOR."""
+
+    SENSORGROUP = 12
+    """Raw sensor-group bitmask/flag field. Semantics are not reverse engineered."""
+
+    SENSORGROUPVALUE = 13
+    """Packed multi-value blob backing one or more zero-length, tagged SENSOR controls."""
+
     UNKOWN = 99
     """State isn't implemented. Control saved for debuggin purposes."""
 
@@ -94,6 +106,7 @@ class UnitControl:
     name: str = ""
     unit: str = ""
     localized_names: dict[str, str] | None = None
+    tag: int | None = None
 
 
 @dataclass(frozen=True, repr=True)
@@ -142,15 +155,18 @@ class UnitType:
         # Check for sensor-only devices
         if (
             UnitControlType.SENSOR in control_types
-            and not (
-                UnitControlType.DIMMER in control_types
-                or UnitControlType.RGB in control_types
-                or UnitControlType.TEMPERATURE in control_types
-                or UnitControlType.XY in control_types
-                or UnitControlType.WHITE in control_types
-                or UnitControlType.COLORSOURCE in control_types
-                or UnitControlType.SLIDER in control_types
-            )
+            or UnitControlType.PRESENCE in control_types
+            or UnitControlType.LUX in control_types
+            or UnitControlType.SENSORGROUP in control_types
+            or UnitControlType.SENSORGROUPVALUE in control_types
+        ) and not (
+            UnitControlType.DIMMER in control_types
+            or UnitControlType.RGB in control_types
+            or UnitControlType.TEMPERATURE in control_types
+            or UnitControlType.XY in control_types
+            or UnitControlType.WHITE in control_types
+            or UnitControlType.COLORSOURCE in control_types
+            or UnitControlType.SLIDER in control_types
         ):
             return DeviceRole.SENSOR
 
@@ -206,6 +222,10 @@ class UnitState:
         self._slider: int | None = None
         self._sensor: int | None = None
         self._onoff: bool | None = None
+        self._presence: int | None = None
+        self._lux: int | None = None
+        self._sensorgroup: int | None = None
+        self._sensors: dict[str, int] = {}
 
     def _check_range(
         self, value: int | float, min: int | float, max: int | float
@@ -333,6 +353,55 @@ class UnitState:
         self._sensor = None
 
     @property
+    def presence(self) -> int | None:
+        return self._presence
+
+    @presence.setter
+    def presence(self, value: int) -> None:
+        self._presence = value
+
+    @presence.deleter
+    def presence(self) -> None:
+        self._presence = None
+
+    @property
+    def lux(self) -> int | None:
+        return self._lux
+
+    @lux.setter
+    def lux(self, value: int) -> None:
+        self._lux = value
+
+    @lux.deleter
+    def lux(self) -> None:
+        self._lux = None
+
+    @property
+    def sensorgroup(self) -> int | None:
+        return self._sensorgroup
+
+    @sensorgroup.setter
+    def sensorgroup(self, value: int) -> None:
+        self._sensorgroup = value
+
+    @sensorgroup.deleter
+    def sensorgroup(self) -> None:
+        self._sensorgroup = None
+
+    @property
+    def sensors(self) -> dict[str, int]:
+        """Decoded values for named, tagged sensor controls (e.g. members of a sensor group)."""
+        return self._sensors
+
+    @sensors.setter
+    def sensors(self, value: dict[str, int]) -> None:
+        self._sensors = dict(value)
+
+    @sensors.deleter
+    def sensors(self) -> None:
+        self._sensors = {}
+
+    @property
     def colorsource(self) -> ColorSource | None:
         return self._colorsource
 
@@ -389,7 +458,7 @@ class UnitState:
         self._onoff = None
 
     def __repr__(self) -> str:
-        return f"UnitState(dimmer={self.dimmer}, vertical={self.vertical}, rgb={self.rgb.__repr__()}, white={self.white}, temperature={self.temperature}, colorsource={self.colorsource}, xy={self.xy}, slider={self.slider}, onoff={self.onoff})"
+        return f"UnitState(dimmer={self.dimmer}, vertical={self.vertical}, rgb={self.rgb.__repr__()}, white={self.white}, temperature={self.temperature}, colorsource={self.colorsource}, xy={self.xy}, slider={self.slider}, onoff={self.onoff}, presence={self.presence}, lux={self.lux}, sensorgroup={self.sensorgroup}, sensors={self.sensors})"
 
 
 # TODO: Make unit immutable (refactor state, on, online out of it)
@@ -548,6 +617,61 @@ class Unit:
         _LOGGER.debug(f"Packing {values.__repr__()} as {res}")
         return bytes(res)
 
+    def _decode_tagged_sensor(
+        self,
+        c: UnitControl,
+        group_raw_by_offset: dict[int, int],
+        active_tag: int | None,
+    ) -> int | None:
+        """Decode a zero-length, tagged SENSOR control from the shared SENSORGROUPVALUE blob.
+
+        Confirmed against live device captures: the device reports exactly one tagged
+        sensor's fresh reading per update, round-robin. SENSORGROUP holds a 1-based index
+        of which tag that is; SENSORGROUPVALUE's *entire* raw value (not a bit-slice) is
+        that tag's raw reading, used as-is (`min`/`max` are documentation bounds, not a
+        linear scale target - unlike LUX/generic SENSOR). Other tags simply have no fresh
+        data this update and are left at their previous value.
+
+        :return: The tag's raw value if it's the currently active one, else `None`.
+        """
+        if active_tag is None or c.tag is None or c.tag != active_tag:
+            return None
+        groupRaw = group_raw_by_offset.get(c.offset)
+        if groupRaw is None:
+            _LOGGER.warning(
+                f"Can't decode zero-length sensor '{c.name}' at offset {c.offset}: "
+                "no matching SENSORGROUPVALUE control."
+            )
+            return None
+        return groupRaw
+
+    def _index_sensor_groups(self, value: bytes) -> tuple[dict[int, int], int | None]:
+        """Decode SENSORGROUPVALUE blobs and the active tag index from SENSORGROUP.
+
+        SENSORGROUPVALUE/SENSORGROUP typically appear *after* their tagged SENSOR siblings
+        in the control list, so this pre-pass lets `setStateFromBytes` resolve them
+        regardless of declaration order. Assumes a single SENSORGROUP control selects the
+        active tag for all SENSORGROUPVALUE blobs in the unit (true for all known fixtures).
+        """
+        group_raw_by_offset: dict[int, int] = {}
+        active_tag: int | None = None
+        for g in self.unitType.controls:
+            if g.type not in (
+                UnitControlType.SENSORGROUPVALUE,
+                UnitControlType.SENSORGROUP,
+            ):
+                continue
+            gByteLen = (g.length + g.offset % 8 - 1) // 8 + 1
+            gBytes = value[g.offset // 8 : g.offset // 8 + gByteLen]
+            gInt = int.from_bytes(gBytes, byteorder="little", signed=False)
+            gInt >>= g.offset % 8
+            gInt &= 2**g.length - 1
+            if g.type == UnitControlType.SENSORGROUPVALUE:
+                group_raw_by_offset[g.offset] = gInt
+            elif gInt >= 1:
+                active_tag = gInt - 1
+        return group_raw_by_offset, active_tag
+
     # TODO: Add tests for this method
     def setStateFromBytes(self, value: bytes) -> None:
         """Parse state bytes into a `UnitState` and set it for the current unit.
@@ -556,6 +680,8 @@ class Unit:
         """
         if not self._state:
             self._state = UnitState()
+
+        group_raw_by_offset, active_tag = self._index_sensor_groups(value)
 
         # TODO: Support for resolutions >8 byte?
         for c in self.unitType.controls:
@@ -609,16 +735,34 @@ class Unit:
                 tempMask = 2**c.length - 1
                 # TODO: We should probalby try to make this number a bit more round
                 self._state.temperature = int(((cInt / tempMask) * tempRange) + c.min)
+            elif c.type == UnitControlType.SENSOR and c.length == 0:
+                tagValue = self._decode_tagged_sensor(
+                    c, group_raw_by_offset, active_tag
+                )
+                if tagValue is not None:
+                    self._state.sensors[c.name] = tagValue
             elif c.type == UnitControlType.SENSOR:
-                if c.length == 0 or c.max is None or c.min is None or c.max == c.min:
-                    if c.length == 0:
-                        _LOGGER.warning("Can't set sensor when length is zero.")
-                    else:
-                        _LOGGER.warning("Can't set sensor when min or max unknown.")
+                if c.max is None or c.min is None or c.max == c.min:
+                    _LOGGER.warning("Can't set sensor when min or max unknown.")
                     continue
                 sensorRange = c.max - c.min
                 sensorMask = 2**c.length - 1
                 self._state.sensor = int(((cInt / sensorMask) * sensorRange) + c.min)
+            elif c.type == UnitControlType.PRESENCE:
+                self._state.presence = cInt
+            elif c.type == UnitControlType.LUX:
+                luxMin = c.min if c.min is not None else 0
+                if c.max is None or c.max == luxMin:
+                    _LOGGER.warning("Can't set lux when max unknown.")
+                    continue
+                luxRange = c.max - luxMin
+                luxMask = 2**c.length - 1
+                self._state.lux = int(((cInt / luxMask) * luxRange) + luxMin)
+            elif c.type == UnitControlType.SENSORGROUP:
+                self._state.sensorgroup = cInt
+            elif c.type == UnitControlType.SENSORGROUPVALUE:
+                # Consumed via the pre-pass + the zero-length SENSOR branch above.
+                pass
             elif c.type == UnitControlType.COLORSOURCE:
                 self._state.colorsource = ColorSource(cInt)
             elif c.type == UnitControlType.XY:

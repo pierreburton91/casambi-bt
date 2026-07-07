@@ -23,8 +23,7 @@ def create_unit_type_from_spec(spec: dict) -> UnitType:
         try:
             control_type = UnitControlType[type_str]
         except KeyError:
-            # Skip unknown control types for testing
-            continue
+            control_type = UnitControlType.UNKOWN
 
         control = UnitControl(
             type=control_type,
@@ -36,6 +35,7 @@ def create_unit_type_from_spec(spec: dict) -> UnitType:
             max=control_json.get("max"),
             name=control_json.get("name", ""),
             unit=control_json.get("unit", ""),
+            tag=control_json.get("tag"),
         )
         controls.append(control)
 
@@ -147,13 +147,59 @@ def test_screen_dimmer():
 
 
 def test_sensor_values():
-    """Test SENSOR control on sensor platform fixture."""
+    """Test decoding presence/lux/sensorgroup and tagged sensor values on the sensor platform fixture."""
     spec = load_fixture_spec("sensors-platform.json")
     unit_type = create_unit_type_from_spec(spec)
 
-    # Test various sensor values
-    test_values = [0, 1, 100, 1000, 10000]
-    round_trip_encoding(unit_type, UnitControlType.SENSOR, test_values)
+    unit = Unit(
+        _typeId=unit_type.id,
+        deviceId=1,
+        uuid="test-sensor",
+        address="00:11:22:33:44:55",
+        name="Test Sensor Platform",
+        firmwareVersion="1.0",
+        unitType=unit_type,
+    )
+
+    def build_state_bytes(
+        presence: int, lux: int, sensorgroup: int, sensorgroupvalue: int
+    ) -> bytes:
+        # Hand-pack raw bits by offset into a single little-endian integer, mirroring how
+        # `setStateFromBytes` extracts bits (bit N is bit N of the little-endian byte
+        # string). getStateAsBytes doesn't support encoding these read-only fields, so we
+        # build bytes directly: presence(offset 0, len 2), lux(offset 2, len 12),
+        # sensorgroup(offset 14, len 4), sensorgroupvalue(offset 18, len 16).
+        full_int = (
+            presence | (lux << 2) | (sensorgroup << 14) | (sensorgroupvalue << 18)
+        )
+        return full_int.to_bytes(unit_type.stateLength, byteorder="little")
+
+    # Confirmed against live device captures (see Unit._decode_tagged_sensor): the device
+    # reports exactly one tagged sensor's fresh reading per update, round-robin.
+    # `sensorgroup` is a 1-based index of which tag that is; `sensorgroupvalue`'s full raw
+    # value (not a bit-slice) is that tag's reading, used as-is. sensorgroup=1 selects tag 0
+    # (Wind Snelheid).
+    unit.setStateFromBytes(
+        build_state_bytes(presence=1, lux=4095, sensorgroup=1, sensorgroupvalue=1234)
+    )
+
+    assert unit.state is not None
+    assert unit.state.presence == 1
+    assert unit.state.lux == 10000
+    assert unit.state.sensorgroup == 1
+    assert unit.state.sensors == {"Wind Snelheid": 1234}
+
+    # sensorgroup=3 selects tag 2 (PIR status) this update. Wind Snelheid's previous
+    # reading must be retained since it has no fresh data this cycle.
+    unit.setStateFromBytes(
+        build_state_bytes(presence=0, lux=0, sensorgroup=3, sensorgroupvalue=42)
+    )
+
+    assert unit.state.sensorgroup == 3
+    assert unit.state.sensors == {"Wind Snelheid": 1234, "PIR status": 42}
+    print(
+        "  ✓ Sensor platform state decoded correctly (presence, lux, sensorgroup, round-robin tagged sensors)"
+    )
 
 
 def test_temperature_control():

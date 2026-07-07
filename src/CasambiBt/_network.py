@@ -371,16 +371,17 @@ class Network:
                 localized_names = unitTypeJson["strings"][name]
 
             controlObj = UnitControl(
-                type,
-                controlJson["offset"],
-                controlJson["length"],
-                controlJson["default"],
-                controlJson["readonly"],
-                controlJson.get("min", None),
-                controlJson.get("max", None),
-                name,
-                unit,
-                localized_names,
+                type=type,
+                offset=controlJson["offset"],
+                length=controlJson["length"],
+                default=controlJson["default"],
+                readonly=controlJson["readonly"],
+                min=controlJson.get("min", None),
+                max=controlJson.get("max", None),
+                name=name,
+                unit=unit,
+                localized_names=localized_names,
+                tag=controlJson.get("tag", None),
             )
 
             controls.append(controlObj)

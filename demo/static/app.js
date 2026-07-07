@@ -150,10 +150,6 @@ function renderUnitCard(unit) {
     if (!unit.controls || unit.controls.length === 0) {
         controls.innerHTML = '<div>No controls available</div>';
     } else {
-        // Check if this is primarily a sensor
-        const isSensor = unit.controls.includes('SENSOR');
-        const hasControls = unit.controls.some(c => !['SENSOR'].includes(c));
-
         // On/Off control
         if (unit.controls.includes('ONOFF')) {
             const group = document.createElement('div');
@@ -370,8 +366,40 @@ function renderUnitCard(unit) {
             controls.appendChild(group);
         }
 
-        // Sensor display (readonly)
-        if (isSensor && unit.state?.sensor !== undefined) {
+        // Sensor readings (readonly)
+        if (unit.state?.presence !== undefined) {
+            const group = document.createElement('div');
+            group.className = 'control-group';
+            group.innerHTML = `<label>Presence:</label><span class="sensor-value">${unit.state.presence}</span>`;
+            controls.appendChild(group);
+        }
+
+        if (unit.state?.lux !== undefined) {
+            const group = document.createElement('div');
+            group.className = 'control-group';
+            group.innerHTML = `<label>Lux:</label><span class="sensor-value">${unit.state.lux}</span>`;
+            controls.appendChild(group);
+        }
+
+        (unit.sensorDetails || []).forEach(detail => {
+            const value = unit.state?.sensors?.[detail.name];
+            if (value === undefined) return;
+            const group = document.createElement('div');
+            group.className = 'control-group';
+            const unitSuffix = detail.unit ? ` ${detail.unit}` : '';
+            group.innerHTML = `<label>${detail.name}:</label><span class="sensor-value">${value}${unitSuffix}</span>`;
+            controls.appendChild(group);
+        });
+
+        if (unit.state?.sensorgroup !== undefined) {
+            const group = document.createElement('div');
+            group.className = 'control-group';
+            const raw = `0b${unit.state.sensorgroup.toString(2).padStart(4, '0')}`;
+            group.innerHTML = `<label>Sensor Group:</label><span class="sensor-value">${raw} (raw)</span>`;
+            controls.appendChild(group);
+        }
+
+        if (unit.state?.sensor !== undefined) {
             const group = document.createElement('div');
             group.className = 'control-group';
             group.innerHTML = `<label>Sensor:</label><span class="sensor-value">${unit.state.sensor}</span>`;

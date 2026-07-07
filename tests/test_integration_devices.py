@@ -24,8 +24,7 @@ def create_unit_type_from_spec(spec: dict) -> UnitType:
         try:
             control_type = UnitControlType[type_str]
         except KeyError:
-            # Skip unknown control types for testing
-            continue
+            control_type = UnitControlType.UNKOWN
 
         control = UnitControl(
             type=control_type,
@@ -37,6 +36,7 @@ def create_unit_type_from_spec(spec: dict) -> UnitType:
             max=control_json.get("max"),
             name=control_json.get("name", ""),
             unit=control_json.get("unit", ""),
+            tag=control_json.get("tag"),
         )
         controls.append(control)
 
