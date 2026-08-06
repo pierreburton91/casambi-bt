@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import copy
 import logging
 import signal
 import sys
@@ -10,7 +11,7 @@ from quart import Quart, ResponseReturnValue, jsonify, render_template, request
 from quart_cors import cors
 
 from CasambiBt import Casambi, discover
-from CasambiBt._unit import Unit, UnitControlType
+from CasambiBt._unit import DeviceRole, Unit, UnitControl, UnitControlType, UnitState
 
 # Configure logging
 logging.basicConfig(
@@ -107,6 +108,31 @@ def on_disconnected() -> None:
         logger.error(f"Failed to queue disconnection: {e}")
 
 
+def get_position_control(
+    unit: Unit,
+) -> tuple[UnitControlType, UnitControl, int, int] | None:
+    """Resolve the control backing a shade/screen's open/close position, if any.
+
+    Returns ``(control_type, control, min, max)`` where ``min``/``max`` is the
+    native-unit range to normalize percentages against: the control's own
+    ``min``/``max`` for ``SLIDER`` (that's what setStateFromBytes/getStateAsBytes
+    actually scale against), or a fixed ``0``/``255`` for ``DIMMER`` (DIMMER
+    decoding never consults a control's min/max, always raw byte range).
+    """
+    role = unit.unitType.device_role
+    if role == DeviceRole.MOTORIZED_SHADE:
+        control = unit.unitType.get_control(UnitControlType.SLIDER)
+        if control is None or control.min is None or control.max is None:
+            return None
+        return (UnitControlType.SLIDER, control, control.min, control.max)
+    if role == DeviceRole.MOTORIZED_SCREEN:
+        control = unit.unitType.get_control(UnitControlType.DIMMER)
+        if control is None:
+            return None
+        return (UnitControlType.DIMMER, control, 0, 255)
+    return None
+
+
 def serialize_unit(unit: Unit) -> dict[str, Any]:
     """Convert Unit object to JSON-serializable dict with frontend-compatible property names."""
     state_dict: dict[str, Any] = {}
@@ -144,6 +170,18 @@ def serialize_unit(unit: Unit) -> dict[str, Any]:
 
         if unit.state.sensors:
             state_dict["sensors"] = dict(unit.state.sensors)
+
+        position = get_position_control(unit)
+        if position is not None:
+            control_type, _, min_v, max_v = position
+            raw = (
+                unit.state.slider
+                if control_type == UnitControlType.SLIDER
+                else unit.state.dimmer
+            )
+            if raw is not None and max_v > min_v:
+                pct = round((raw - min_v) / (max_v - min_v) * 100)
+                state_dict["positionPercent"] = max(0, min(100, pct))
 
     sensor_details = sorted(
         (
@@ -490,6 +528,61 @@ async def control_unit(unit_id: str) -> ResponseReturnValue:
         return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
         logger.error(f"Control command failed for unit {unit_id}: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.post('/api/units/<unit_id>/position')
+async def set_unit_position(unit_id: str) -> ResponseReturnValue:
+    """Set a motorized shade/screen's open/close position as a 0-100 percentage.
+
+    Percentages are normalized against the unit's own position control range
+    (e.g. a louver's blade angle in degrees), so 100 always means fully open
+    regardless of the underlying device's raw value range.
+    """
+    global casambi_instance
+    async with state_lock:
+        if not casambi_instance:
+            logger.warning(f"Position request for unit {unit_id} while not connected")
+            return jsonify({"success": False, "error": "Not connected"}), 400
+        unit: Unit | None = units_cache.get(unit_id)
+        if not unit:
+            logger.warning(f"Unit {unit_id} not found for position")
+            return jsonify({"success": False, "error": "Unit not found"}), 404
+    try:
+        data: dict[str, Any] | None = await request.get_json()
+        if not data or 'percent' not in data:
+            logger.warning("Position request missing percent")
+            return jsonify({"success": False, "error": "percent is required"}), 400
+
+        percent = data['percent']
+        if not isinstance(percent, (int, float)) or percent < 0 or percent > 100:
+            logger.warning(f"Invalid position percent: {percent}")
+            return jsonify({"success": False, "error": "percent must be between 0 and 100"}), 400
+
+        position = get_position_control(unit)
+        if position is None:
+            logger.warning(f"Unit {unit_id} has no position control")
+            return jsonify({"success": False, "error": "Unit has no position control"}), 400
+        control_type, _, min_v, max_v = position
+
+        native_value = round(percent / 100 * (max_v - min_v) + min_v)
+
+        state = copy.copy(unit.state) if unit.state is not None else UnitState()
+        if control_type == UnitControlType.SLIDER:
+            state.slider = native_value
+        else:
+            state.dimmer = native_value
+
+        logger.info(f"Setting position={percent}% ({control_type.name}={native_value}) on unit {unit.name} ({unit_id})")
+        await casambi_instance.setUnitState(unit, state)
+        logger.debug("Position command sent successfully")
+
+        return jsonify({"success": True})
+    except ValueError as e:
+        logger.error(f"Invalid position value: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Position command failed for unit {unit_id}: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 

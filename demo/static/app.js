@@ -8,6 +8,7 @@ const API = {
     units: '/api/units',
     unitState: (id) => `/api/units/${id}/state`,
     unitControl: (id) => `/api/units/${id}/control`,
+    unitPosition: (id) => `/api/units/${id}/position`,
     transports: '/api/transports',
     transportDiscover: (type) => `/api/transports/${type}/discover`
 };
@@ -167,8 +168,36 @@ function renderUnitCard(unit) {
             controls.appendChild(group);
         }
 
+        // Position control (motorized shades/screens) - shown as a 0-100%
+        // slider regardless of the underlying device's raw value range
+        // (e.g. a louver's blade angle in degrees), so 100% always means
+        // fully open.
+        if (unit.device_role === 'MOTORIZED_SHADE' || unit.device_role === 'MOTORIZED_SCREEN') {
+            const group = document.createElement('div');
+            group.className = 'control-group';
+            const label = document.createElement('label');
+            label.textContent = 'Position:';
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = '0';
+            slider.max = '100';
+            slider.value = unit.state?.positionPercent ?? 0;
+            slider.addEventListener('input', () => {
+                sendPosition(unit.uuid, parseInt(slider.value));
+            });
+            const valueSpan = document.createElement('span');
+            valueSpan.textContent = `${slider.value}%`;
+            slider.addEventListener('input', () => {
+                valueSpan.textContent = `${slider.value}%`;
+            });
+            group.appendChild(label);
+            group.appendChild(slider);
+            group.appendChild(valueSpan);
+            controls.appendChild(group);
+        }
+
         // Dimmer control
-        if (unit.controls.includes('DIMMER')) {
+        if (unit.controls.includes('DIMMER') && unit.device_role !== 'MOTORIZED_SCREEN') {
             const group = document.createElement('div');
             group.className = 'control-group';
             const label = document.createElement('label');
@@ -317,7 +346,7 @@ function renderUnitCard(unit) {
         }
 
         // Slider control (generic)
-        if (unit.controls.includes('SLIDER')) {
+        if (unit.controls.includes('SLIDER') && unit.device_role !== 'MOTORIZED_SHADE') {
             const group = document.createElement('div');
             group.className = 'control-group';
             const label = document.createElement('label');
@@ -438,6 +467,17 @@ function sendControl(unitId, controlType, value) {
         })
         .catch(error => {
             log(`Failed to send control: ${error.message}`, true);
+        });
+}
+
+// Send a shade/screen open/close position (0-100%) to a unit
+function sendPosition(unitId, percent) {
+    apiCall('POST', API.unitPosition(unitId), { percent })
+        .then(() => {
+            log(`Sent position=${percent}% to unit ${unitId}`);
+        })
+        .catch(error => {
+            log(`Failed to send position: ${error.message}`, true);
         });
 }
 
