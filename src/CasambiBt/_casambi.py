@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import logging
 from binascii import b2a_hex as b2a
 from collections.abc import Callable
@@ -16,7 +17,7 @@ from ._client import CasambiClient, ConnectionState, IncomingPacketType
 from ._network import Network
 from ._transport import BluetoothTransport
 from ._operation import OpCode, OperationsContext
-from ._unit import Group, Scene, Unit, UnitControlType, UnitState
+from ._unit import DeviceRole, Group, Scene, Unit, UnitControlType, UnitState
 from .errors import ConnectionStateError, ProtocolError, ReadOnlyControlError
 
 
@@ -437,8 +438,25 @@ class Casambi:
         elif control_type == UnitControlType.XY:
             await self.setColorXY(target, cast(tuple[float, float], value))
         elif control_type == UnitControlType.ONOFF:
-            # ONOFF uses setLevel with 255 or 0
-            await self.setLevel(target, 255 if cast(int, value) else 0)
+            if isinstance(target, Unit) and target.unitType.device_role in (
+                DeviceRole.MOTORIZED_SHADE,
+                DeviceRole.MOTORIZED_SCREEN,
+            ):
+                # These fixtures pack ONOFF as a bit alongside their
+                # SLIDER/DIMMER position in one state blob and have no
+                # dedicated on/off opcode; OpCode.SetLevel (the "dimmer"
+                # opcode) either targets no field at all (shades have no
+                # dimmer control) or the wrong one (screens). Use the
+                # offset-aware SetState path instead, preserving the rest
+                # of the known state.
+                state = (
+                    copy.copy(target.state) if target.state is not None else UnitState()
+                )
+                state.onoff = bool(value)
+                await self.setUnitState(target, state)
+            else:
+                # ONOFF uses setLevel with 255 or 0
+                await self.setLevel(target, 255 if cast(int, value) else 0)
         elif control_type == UnitControlType.COLORSOURCE:
             # Color source switching uses setColor internally in some protocols
             # For now, treat as unsupported to avoid confusion

@@ -183,6 +183,142 @@ def test_command_dispatch():
             print(f"  ✓ {control_type} passed readonly validation (failed later as expected)")
 
 
+def test_onoff_dispatch_uses_setstate_for_shades_and_screens():
+    """Test that ONOFF routes through setUnitState (OpCode.SetState) for shades/screens, not setLevel."""
+    print("\n🧪 Testing ONOFF dispatch for motorized shades/screens...")
+
+    import asyncio
+
+    casa = Casambi()
+
+    calls: dict = {"setUnitState": None, "setLevel": None}
+
+    async def fake_set_unit_state(target, state):
+        calls["setUnitState"] = (target, state)
+
+    async def fake_set_level(target, level):
+        calls["setLevel"] = (target, level)
+
+    casa.setUnitState = fake_set_unit_state
+    casa.setLevel = fake_set_level
+
+    # Louver (MOTORIZED_SHADE, no DIMMER control): slider position must be
+    # preserved and ONOFF must be routed via setUnitState, not setLevel.
+    louver_spec = load_fixture_spec("louvers.json")
+    louver_type = create_unit_type_from_spec(louver_spec)
+    louver_unit = Unit(
+        _typeId=louver_type.id,
+        deviceId=1,
+        uuid="test-louver",
+        address="00:11:22:33:44:55",
+        name="Test Louver",
+        firmwareVersion="1.0",
+        unitType=louver_type,
+    )
+    seed_state = UnitState()
+    seed_state.slider = 71
+    louver_unit.setStateFromBytes(louver_unit.getStateAsBytes(seed_state))
+    assert louver_unit.state is not None and louver_unit.state.slider is not None
+
+    asyncio.run(casa.setControl(louver_unit, UnitControlType.ONOFF, 1))
+    assert calls["setLevel"] is None, "ONOFF for a shade must not use setLevel"
+    assert calls["setUnitState"] is not None, "ONOFF for a shade must use setUnitState"
+    target, state = calls["setUnitState"]
+    assert target is louver_unit
+    assert state.onoff is True
+    assert (
+        abs(state.slider - 71) <= 1
+    ), f"Slider position should be preserved, got {state.slider}"
+    print("  ✓ Louver ONOFF routed through setUnitState with slider preserved")
+
+    calls["setUnitState"] = None
+    calls["setLevel"] = None
+
+    # Screen (MOTORIZED_SCREEN, DIMMER but no SLIDER): dimmer position must
+    # be preserved and ONOFF must be routed via setUnitState, not setLevel.
+    screen_spec = load_fixture_spec("screen.json")
+    screen_type = create_unit_type_from_spec(screen_spec)
+    screen_unit = Unit(
+        _typeId=screen_type.id,
+        deviceId=2,
+        uuid="test-screen",
+        address="00:11:22:33:44:56",
+        name="Test Screen",
+        firmwareVersion="1.0",
+        unitType=screen_type,
+    )
+    seed_state = UnitState()
+    seed_state.dimmer = 128
+    screen_unit.setStateFromBytes(screen_unit.getStateAsBytes(seed_state))
+    assert screen_unit.state is not None and screen_unit.state.dimmer is not None
+
+    asyncio.run(casa.setControl(screen_unit, UnitControlType.ONOFF, 0))
+    assert calls["setLevel"] is None, "ONOFF for a screen must not use setLevel"
+    assert calls["setUnitState"] is not None, "ONOFF for a screen must use setUnitState"
+    target, state = calls["setUnitState"]
+    assert target is screen_unit
+    assert state.onoff is False
+    assert (
+        state.dimmer == 128
+    ), f"Dimmer position should be preserved, got {state.dimmer}"
+    print("  ✓ Screen ONOFF routed through setUnitState with dimmer preserved")
+
+    calls["setUnitState"] = None
+    calls["setLevel"] = None
+
+    # Plain light (DIMMER+ONOFF+RGB => DeviceRole.LIGHT): ONOFF must keep
+    # using setLevel(255/0) as before -- no fixture spec for a plain light
+    # exists under doc/fixtures-specs/, so build one inline.
+    light_type = UnitType(
+        id=999,
+        model="Test Light",
+        manufacturer="Test",
+        mode="test",
+        stateLength=4,
+        controls=[
+            UnitControl(
+                type=UnitControlType.DIMMER,
+                offset=0,
+                length=8,
+                default=0,
+                readonly=False,
+            ),
+            UnitControl(
+                type=UnitControlType.ONOFF,
+                offset=8,
+                length=1,
+                default=0,
+                readonly=False,
+            ),
+            UnitControl(
+                type=UnitControlType.RGB,
+                offset=9,
+                length=18,
+                default=0,
+                readonly=False,
+            ),
+        ],
+    )
+    light_unit = Unit(
+        _typeId=light_type.id,
+        deviceId=3,
+        uuid="test-light",
+        address="00:11:22:33:44:57",
+        name="Test Light",
+        firmwareVersion="1.0",
+        unitType=light_type,
+    )
+    assert light_unit.unitType.device_role == DeviceRole.LIGHT
+
+    asyncio.run(casa.setControl(light_unit, UnitControlType.ONOFF, 1))
+    assert calls["setUnitState"] is None, "ONOFF for a light must not use setUnitState"
+    assert calls["setLevel"] == (
+        light_unit,
+        255,
+    ), f"ONOFF=1 for a light should call setLevel(target, 255), got {calls['setLevel']}"
+    print("  ✓ Light ONOFF still routed through setLevel")
+
+
 def test_readonly_sensor_rejection():
     """Test that sensor controls are rejected as read-only."""
     print("\n🧪 Testing sensor readonly rejection...")
@@ -208,6 +344,7 @@ if __name__ == "__main__":
         test_device_role_classification()
         test_state_parsing_from_bytes()
         test_command_dispatch()
+        test_onoff_dispatch_uses_setstate_for_shades_and_screens()
         test_readonly_sensor_rejection()
 
         print("\n✅ All integration tests passed!")
