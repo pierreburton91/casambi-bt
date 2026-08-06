@@ -1,445 +1,240 @@
 # Casambi-BT Project Improvement Roadmap
 
+_Last verified against code: 2026-08-06 (branch `feat/covers-handling`)._
+
 ## Executive Summary
 
-This master plan addresses **critical robustness issues** in the `src/CasambiBt/` library and **functionality gaps** in the `demo/` web application. The library is alpha-quality with solid core architecture but needs hardening for production use. The demo is structurally flawed and needs significant refactoring.
+The demo app rewrite (Quart, serialization, CORS, session persistence, input
+validation) is **complete** — the app described as "non-functional" in the
+original version of this roadmap now works end to end. Since that original
+assessment, the project also grew three feature areas it didn't previously
+mention at all: an **ESPHome/Home Assistant remote-BLE transport layer**, a
+**sensor platform** (presence/lux/tagged round-robin sensor groups — see
+CLAUDE.md for the wire-format details), and **motorized shade/screen on/off +
+position control**.
+
+What's left is mostly library hardening (timeouts, callback lifecycle, a
+stale typo with a real API-surface impact) and a code-quality baseline that
+has regressed: **ruff, isort, black, and mypy all currently fail** on this
+branch, even though CI gates on all four (see item 8 below). Whoever picks
+this up next should treat restoring a clean lint baseline as its own
+short task, since new work will keep failing CI until it's fixed regardless
+of what else gets tackled.
 
 ---
 
-## 🚨 CRITICAL ISSUES (Priority: HIGH)
+## ✅ RESOLVED
 
-### 1. Demo Application - Threading Model Broken - ✅ DONE
-**Location:** `demo/web_app.py`
+These were tracked as broken/missing in earlier versions of this roadmap and
+are now done, verified directly against the code:
 
-**Problems:**
-- Uses `threading.Thread` + `asyncio` mixing without proper synchronization
-- Global mutable state (`casambi_instance`, `units_cache`, `connection_status`) causes race conditions
-- `run_in_thread()` blocks Flask request thread, causing potential deadlocks
-- No error propagation from async background tasks
-- `loop.run_forever()` never stops cleanly
-
-**Impact:** Demo is **non-functional** as stated by user. Will hang or crash under load.
-
-**Fix Required:** Complete refactor to use one of:
-- Async Flask (Quart)
-- Proper thread pool with futures
-- Separate asyncio loop with clean shutdown
-
----
-
-### 2. Demo - Missing Unit Serialization
-**Location:** `demo/web_app.py`, `demo/static/script.js`
-
-**Problems:**
-- `units_cache` stores raw `Unit` objects which are not JSON-serializable
-- Frontend expects `unit.device_role`, `unit.controls`, `unit.state` but `Unit` objects don't have these as dict keys
-- `get_units()` endpoint returns non-serializable objects → 500 errors
-- State polling returns raw bytes/UnitState objects, not JSON
-
-**Impact:** Dashboard never renders; API calls fail silently or with errors.
+- **Demo threading model** — `demo/web_app.py` is Quart-based (async), with a
+  real `asyncio.Lock` guarding shared state and an `asyncio.Queue` +
+  background consumer task (`process_state_queue`) decoupling Casambi's sync
+  callbacks from request handling. No `threading.Thread` remains.
+- **Demo unit serialization** — `serialize_unit()` (`demo/web_app.py`)
+  converts `Unit`/`UnitState` into JSON-safe dicts and is used by every API
+  endpoint that returns unit data.
+- **Frontend/backend field mismatch** — the frontend was rewritten as
+  `demo/static/app.js` (replacing the old `script.js`); it consumes the
+  exact field names `serialize_unit()` emits, including back-compat aliases
+  like `state.onOff`/`state.dimmer`.
+- **CORS support** — `demo/web_app.py` wraps the app with `quart_cors.cors()`.
+- **Session persistence across refresh** — `app.js` persists connection
+  config to `localStorage` and auto-reconnects on load via `tryReconnect()`.
+  Note: the password is stored in plaintext in `localStorage` — fine for a
+  local demo, but flag this if the demo is ever exposed beyond localhost.
+- **Input validation on control endpoints** — `/api/units/<id>/control`
+  validates `control_type` against `UnitControlType` and rejects unknown
+  values with 400; `/api/units/<id>/position` validates `percent` is numeric
+  and in `[0, 100]`.
+- **README accuracy** — documents `demo.py` (root-level scripted example,
+  which exists) and `demo/web_app.py` separately, and covers `setControl()`
+  and sensor handling (including the round-robin group protocol) in depth.
 
 ---
 
-### 3. Library - Unbounded Packet Growth
-**Location:** `src/CasambiBt/_client.py:427-435`
+## 🚨 OPEN — Correctness / API-surface
 
-**Problem:**
-```python
-raw_encrypted_packet = data[:]
-self._logger.info(f"[CASAMBI_RAW_PACKET] Encrypted #{self._inPacketCount}: {b2a(raw_encrypted_packet)}")
-```
+### 1. `Group.groudId` typo has no alias, contradicts its own docstring
+**Location:** `src/CasambiBt/_unit.py:808,813`, `src/CasambiBt/_casambi.py:496-497`
 
-Logging every packet at INFO level with full hex dump will:
-- Fill disk space quickly
-- Slow down the application
-- Expose sensitive data in logs
+The field is still spelled `groudId`, but the docstring right above it says
+`:ivar groupId:`. `Casambi._send()` reads `target.groudId` directly. There is
+no `groupId` alias anywhere in the repo. This is a one-line typo that's been
+outstanding across multiple roadmap revisions — fix it and add a `groupId`
+property alias for anyone who already read the docstring and typed the
+"correct" name.
 
-**Fix:** Move to DEBUG level or add rate limiting.
+### 2. Error types not exported from the package root
+**Location:** `src/CasambiBt/__init__.py:33-48`
+
+`errors.py` defines `CasambiBtError` and 8 subclasses (`NetworkNotFoundError`,
+`ConnectionStateError`, `ReadOnlyControlError`, etc.), none of which appear
+in `__all__`. Consumers can't `from CasambiBt import ConnectionStateError` —
+they have to reach into `CasambiBt.errors` directly, which isn't documented
+anywhere as the intended import path.
+
+### 3. `Unit` state mutation still bypasses encapsulation internally
+**Location:** `src/CasambiBt/_unit.py:487-510`, `src/CasambiBt/_casambi.py:535-536,657`
+
+`_state`/`_on`/`_online` gained read-only `@property` getters, but the
+underlying fields are still plain mutable attributes, and `_casambi.py`
+itself writes `u._on = ...` / `u._online = ...` directly rather than through
+any setter. So the property layer doesn't actually prevent inconsistent
+state — it just hides the fields from the public API while the library's
+own code still pokes them directly. Either add real setters that the
+library itself uses, or drop the pretense of encapsulation.
 
 ---
 
-### 4. Library - Memory Leak in Callbacks
-**Location:** `src/CasambiBt/_casambi.py:380-395`
+## ⚠️ OPEN — Robustness
 
-**Problem:**
-- `registerUnitChangedHandler` appends to list without cleanup
-- No weak references used - handlers prevent GC of listener objects
-- No max size limit on callback lists
+### 4. Unbounded packet logging at INFO level
+**Location:** `src/CasambiBt/_client.py:442-444` (raw encrypted packet hex),
+`:459-461` (decrypted payload hex)
 
-**Impact:** Memory leak if consumers don't unregister callbacks.
+Every inbound packet is still logged at `INFO` with a full hex dump of both
+the encrypted and decrypted payload. Anyone running with default logging
+gets disk growth proportional to traffic and decrypted protocol data in
+plaintext logs. Move to `DEBUG` (or add rate limiting) as originally
+planned.
 
-**Fix:** Use `weakref.WeakMethod` or `weakref.WeakSet` for callback storage.
-
----
-
-### 5. Library - No Connection Timeout
+### 5. No timeout on BLE protocol operations
 **Location:** `src/CasambiBt/_client.py`
 
-**Problem:**
-- BLE operations can block indefinitely
-- No timeout on `exchangeKey()`, `authenticate()`, or `send()`
-- Network issues cause permanent hangs
+`exchangeKey()`, `authenticate()`, and `send()` have no `asyncio.wait_for` or
+equivalent around their awaits. A device that stops responding mid-handshake
+or mid-send hangs the caller indefinitely. BLE *connection establishment*
+does get retry/backoff for free via `bleak-retry-connector`
+(`_bleak_transport.py:58-66`), but that's a different layer — it doesn't
+help once a session is established and a specific request stalls.
 
-**Fix:** Add configurable timeouts to all BLE operations.
+### 6. Callback lists have no automatic lifecycle management
+**Location:** `src/CasambiBt/_casambi.py:40-42,571-639`
 
----
+`registerUnitChangedHandler`/`registerSwitchEventHandler`/
+`registerDisconnectCallback` each have a matching `unregister*` method, so
+manual cleanup is possible — this is better than previously described. But
+there's still no weak-reference option and no cap, so a consumer that
+forgets to unregister (e.g. on an exception path) leaks the listener for the
+life of the `Casambi` instance. Lower priority than originally scored, since
+a manual escape hatch exists; worth a `weakref.WeakMethod` option if this
+becomes a real-world pain point rather than a theoretical one.
 
-## ⚠️ HIGH PRIORITY ISSUES
+### 7. Cache invalidation is all-or-nothing
+**Location:** `src/CasambiBt/_cache.py:14,42-70`
 
-### 6. Demo - No CORS Support
-**Location:** `demo/web_app.py`
+`CACHE_VERSION` is now `3` (bumped during the sensor-platform work), and a
+version bump still deletes the entire cache directory
+(`_ensureCacheValid()`) rather than migrating or selectively invalidating
+stale entries. Fine at current scale; would matter more if the cache grows
+expensive to rebuild.
 
-**Problem:** No CORS headers → frontend cannot call API if served separately.
+### 8. Lint/type-check baseline is currently broken
+**Location:** whole tree
 
-**Fix:** Add `flask-cors` or manual CORS headers.
+CLAUDE.md states CI "gates on isort, black, ruff, and mypy" — right now all
+four fail locally:
+- `ruff check .` → 131 errors (mostly `T201` print-in-tests and whitespace,
+  20 auto-fixable)
+- `isort --check-only .` → 6 files misordered (`tests/conftest.py`,
+  `tests/test_integration_devices.py`, `tests/test_slider_minmax.py`,
+  `tests/test_device_types.py`, `tests/test_sensor_commands.py`,
+  `src/CasambiBt/_casambi.py`)
+- `black --check .` → 16 files would be reformatted, incl.
+  `demo/web_app.py`, `src/CasambiBt/_unit.py`
+- `mypy .` → 63 errors in 10 files, including real bugs, not just missing
+  annotations: `_encryption.py` bytearray/bytes mismatches, `arg-type`
+  errors on `get_transport_by_type` calls in `demo/web_app.py:349,403`
+  (passing a bare `str` where a `Literal["bleak","esphome","homeassistant"]`
+  is expected), and `union-attr` issues in `examples/motorized_and_sensors.py`
+  from not narrowing `UnitState | None`.
 
----
+Run `pipenv run isort . && pipenv run black .` for the easy wins, then
+triage the ruff/mypy findings — some are real type bugs, not just style.
 
-### 7. Demo - No Connection State Persistence
-**Location:** `demo/web_app.py`
-
-**Problem:**
-- Global `casambi_instance` lost on page refresh
-- No session management
-- User must re-authenticate on every page reload
-
-**Fix:** Add server-side session storage or client-side localStorage.
-
----
-
-### 8. Library - Inconsistent State Access
-**Location:** `src/CasambiBt/_unit.py`
-
-**Problem:**
-- `Unit._state`, `Unit._on`, `Unit._online` are mutable dataclass fields
-- Direct mutation bypasses validation and callbacks
-- No property setters for `state`, `online` properties
-
-**Impact:** Inconsistent state; callbacks not triggered on direct mutation.
-
-**Fix:** Make Unit immutable or add proper property setters.
-
----
-
-### 9. Library - Type Safety Issues
-**Location:** Multiple files
-
-**Problems:**
-- `Group.groudId` - TYPO in field name (should be `groupId`)
-- `setControl()` accepts `value: int | tuple[int,int,int] | tuple[float,float]` but no runtime validation
-- `_send()` casts target types without type guards
-- Missing return type annotations on many methods
-
-**Impact:** Runtime errors, poor IDE support, potential type confusion.
-
----
-
-### 10. Library - Missing Error Types in __init__.py
-**Location:** `src/CasambiBt/__init__.py`
-
-**Problem:** Error classes not exported. Users cannot catch specific exceptions:
-```python
-from CasambiBt import Casambi, ConnectionStateError  # FAILS - not exported
-```
-
-**Fix:** Export all error types in `__init__.py`.
-
----
-
-## 📊 MEDIUM PRIORITY ISSUES
-
-### 11. Demo - Frontend State Mismatch
-**Location:** `demo/static/script.js`
-
-**Problems:**
-- Frontend expects `unit.state.level`, `unit.state.onOff` but backend sends `state.dimmer`, `state.onoff` (lowercase)
-- `unit.controls` expected but `Unit.unitType.controls` is the actual path
-- `unit.device_role` expected but `Unit.unitType.device_role` is the actual property
-
-**Fix:** Either fix frontend expectations or add serialization layer.
-
----
-
-### 12. Demo - No Real-time Updates via WebSocket
-**Location:** `demo/web_app.py`, `demo/static/script.js`
-
-**Problem:** Polling via `/api/poll-state` every 3 seconds is inefficient. WebSocket or Server-Sent Events would be better.
-
-**Fix:** Implement SSE or WebSocket for push updates.
-
----
-
-### 13. Library - Cache Versioning Issue
-**Location:** `src/CasambiBt/_cache.py`
-
-**Problem:**
-- `CACHE_VERSION = 2` is hardcoded
-- No migration path for cache version upgrades
-- Invalidation deletes entire cache, not just stale entries
-
-**Fix:** Add proper cache migration and selective invalidation.
-
----
-
-### 14. Library - No Retry Logic for Transient Failures
+### 9. Retry logic is inconsistent across layers
 **Location:** `src/CasambiBt/_network.py`, `_client.py`
 
-**Problem:** Network requests fail on transient errors (network blips, API rate limits) with no retry.
+BLE connection establishment retries via `bleak-retry-connector`. Nothing
+else does: `_network.py` raises `NetworkUpdateError` on a bad HTTP status
+with a comment suggesting the caller retry, but there's no actual backoff
+loop, and protocol-level `send()`/`exchangeKey()` failures in `_client.py`
+aren't retried either.
 
-**Fix:** Add exponential backoff retry for transient errors.
+### 10. Silent handling of unrecognized protocol data
+**Locations:**
+- `src/CasambiBt/_client.py:476-477` — unknown packet type → `logger.info`
+- `src/CasambiBt/_switch.py:158` — unknown switch message type → `logger.info`
 
----
-
-### 15. Library - Incomplete Protocol Support
-**Location:** `src/CasambiBt/_client.py:470-475`
-
-**Problem:**
-```python
-else:
-    self._logger.info(f"Packet type {packetType} not implemented. Ignoring!")
-```
-
-Unknown packet types are silently ignored. Should log at higher level for debugging.
-
----
-
-### 16. Demo - No Input Validation
-**Location:** `demo/web_app.py`
-
-**Problem:**
-- No validation on `control_type` from client
-- No validation on `value` ranges
-- No rate limiting on control commands
-- Potential for abuse or accidental damage
-
-**Fix:** Add request validation middleware.
-
----
-
-### 17. Library - Switch Event Parsing Fragility
-**Location:** `src/CasambiBt/_switch.py`
-
-**Problems:**
-- Complex packet parsing with many edge cases
-- Falls back to INFO logging for unknown message types (should be DEBUG)
-- No packet length validation before parsing
-- Message type 0x29 handled inconsistently
-
-**Fix:** Harden parsing with length checks and better error recovery.
+Both still log at INFO rather than something that would actually surface in
+default deployments (WARNING) or get filtered out in normal operation
+(DEBUG). Note `_switch.py` did gain real length validation since the last
+roadmap revision (`_switch.py:55,81`, plus an `IndexError` safety net at
+`:162-164`) — the parsing-fragility concern is mostly addressed; only the
+log-level nit remains.
 
 ---
 
 ## 📝 LOW PRIORITY / TECHNICAL DEBT
 
-### 18. Library - TODO Comments
-- `_unit.py:245` - "Support for different resolutions?"
-- `_unit.py:246` - "Work with HS instead of RGB internally"
-- `_unit.py:408` - "Make unit immutable"
-- `_unit.py:660` - "Add tests for this method"
-- `_unit.py:682` - "Add tests for this method"
-- `_network.py:405` - "Parse more stuff"
-- `_client.py:127` - "Should we try to get access to the network name here?"
-- `_client.py:150` - "Implement proper handling after understanding this behavior"
-- `_client.py:160` - "Verify counter"
-- `_client.py:174` - "Verify Digest 2"
+### 11. Real-time updates still via polling
+**Location:** `demo/static/app.js:624`
 
-### 19. Documentation Issues
-- README references `demo.py` which doesn't exist (should be `demo/web_app.py`)
-- No API documentation for `setControl()` in docstrings
-- Missing examples for sensor handling - ✅ DONE (README "Reading Sensor Values")
-- No documentation on error handling patterns
+`setInterval(fetchUnits, 3000)`. Works fine for a demo; would need SSE/WS if
+this ever needs to feel responsive with many units or multiple simultaneous
+clients.
 
-### 20. Testing Gaps
-- No tests for `_client.py` (BLE interaction)
-- No tests for `_network.py` (HTTP API interaction)
-- No tests for `_discover.py`
-- No integration tests
-- Test coverage appears low
+### 12. Testing gaps
+`tests/` covers device-type fixtures, sensor commands, slider min/max, and
+integration-style device scenarios — but nothing exercises `_client.py`
+(BLE protocol/handshake), `_network.py` (HTTP sync), or `_discover.py`
+directly. No coverage tooling is configured (no `pytest-cov`, no threshold
+in `pyproject.toml`), so there's no way to know the actual number, only that
+three whole modules have zero direct test references.
 
-### 21. Code Style Issues
-- Some files use `ruff: noqa: F401` for unused imports
-- Inconsistent docstring formatting
-- Some methods missing docstrings entirely
-- Line length exceeds 88 chars in many places
+### 13. Current TODOs in source
+```
+src/CasambiBt/_casambi.py:156
+src/CasambiBt/_client.py:177,375,385,435,498,500
+src/CasambiBt/_encryption.py:79
+src/CasambiBt/_network.py:34,54,188,260,319
+src/CasambiBt/_operation.py:31
+src/CasambiBt/_switch.py:18,19
+src/CasambiBt/_unit.py:209,210,464,512,522,675,686,736
+```
+`_unit.py:464` is the still-unresolved "make unit immutable" TODO tied to
+item 3 above. Line numbers drift with every feature commit — re-grep
+(`grep -rn TODO src/`) before trusting this list rather than assuming it's
+current.
 
----
+### 14. Cosmetic: sensor group value rendered as binary in the UI
+**Location:** `demo/static/app.js:426`
 
-## 🎯 IMPROVEMENT ROADMAP
-
-### Phase 1: Critical Fixes (Week 1-2)
-**Goal: Make demo functional and fix critical library bugs**
-
-| Task | File | Effort | Priority |
-|------|------|--------|----------|
-| Fix threading model in demo | `demo/web_app.py` | 4h | HIGH |
-| Add unit serialization | `demo/web_app.py` | 3h | HIGH |
-| Fix frontend state expectations | `demo/static/script.js` | 4h | HIGH |
-| Fix Group.groudId typo | `src/CasambiBt/_unit.py` | 1h | HIGH |
-| Export error types | `src/CasambiBt/__init__.py` | 1h | HIGH |
-| Reduce logging verbosity | `src/CasambiBt/_client.py` | 1h | HIGH |
-| Fix memory leak in callbacks | `src/CasambiBt/_casambi.py` | 2h | HIGH |
-
-### Phase 2: Robustness Improvements (Week 3-4)
-**Goal: Harden library for production use**
-
-| Task | File | Effort | Priority |
-|------|------|--------|----------|
-| Add connection timeouts | `src/CasambiBt/_client.py` | 4h | HIGH |
-| Make Unit state changes trigger callbacks | `src/CasambiBt/_unit.py` | 4h | HIGH |
-| Add input validation to demo | `demo/web_app.py` | 3h | MEDIUM |
-| Add CORS support | `demo/web_app.py` | 1h | MEDIUM |
-| Add retry logic for transient failures | `_network.py`, `_client.py` | 4h | MEDIUM |
-| Improve switch event parsing | `src/CasambiBt/_switch.py` | 3h | MEDIUM |
-
-### Phase 3: Enhancements (Week 5-6)
-**Goal: Improve developer experience**
-
-| Task | File | Effort | Priority |
-|------|------|--------|----------|
-| Replace polling with SSE/WebSocket | `demo/web_app.py` | 4h | MEDIUM |
-| Add session persistence | `demo/web_app.py` | 4h | MEDIUM |
-| Add proper cache migration | `src/CasambiBt/_cache.py` | 3h | LOW |
-| Complete TODO items | Various | 8h | LOW |
-| Improve documentation | README.md, docstrings | 4h | LOW |
-| Add more tests | `tests/` | 8h | LOW |
-
-### Phase 4: Technical Debt (Ongoing)
-**Goal: Code quality improvements**
-
-| Task | File | Effort | Priority |
-|------|------|--------|----------|
-| Add missing type hints | All source files | 4h | LOW |
-| Fix ruff lint issues | All source files | 4h | LOW |
-| Add property setters for Unit state | `_unit.py` | 4h | LOW |
-| Address all TODO comments | Various | 8h | LOW |
-| Add integration tests | `tests/` | 8h | LOW |
+Renders `sensorgroup` as `0b${value.toString(2).padStart(4,'0')}` — a
+leftover from the disproven "bitmask" theory of the sensor group protocol
+(see CLAUDE.md's sensor-group section: it's actually a 1-based tag index,
+not a bitmask). Not a functional bug since the underlying decode in
+`_unit.py` is correct, but the raw value shown in the UI is misleading to
+anyone debugging via the demo.
 
 ---
 
-## 📊 SUCCESS METRICS
+## 🎯 SUGGESTED NEXT STEPS
 
-### Library (src/CasambiBt/)
-- [ ] All public classes and functions have docstrings
-- [ ] All error types exported in `__init__.py`
-- [ ] No memory leaks in callback handling
-- [ ] All BLE operations have timeouts
-- [ ] Unit state changes properly trigger callbacks
-- [ ] Group.groudId typo fixed
-- [ ] Type hints complete and accurate
+Roughly in order of leverage vs. effort:
 
-### Demo (demo/)
-- [ ] Application starts without errors
-- [ ] Can discover networks
-- [ ] Can connect to network
-- [ ] Units display in dashboard
-- [ ] Controls are functional
-- [ ] Real-time updates work (SSE or polling)
-- [ ] State persists across page refreshes
-- [ ] No race conditions in state management
-
----
-
-## 🎯 IMMEDIATE NEXT STEPS
-
-1. **Fix the demo threading model** - This is the most critical blocker
-2. **Fix unit serialization** - Demo will not work without this
-3. **Fix the typo in Group.groudId** - Breaks group operations
-4. **Export error types** - Needed for proper error handling
-5. **Reduce logging verbosity** - Current logging fills disks
-
----
-
-## 📋 FILE-SPECIFIC ACTION ITEMS
-
-### src/CasambiBt/__init__.py
-- [ ] Export all error types from `errors.py`
-- [ ] Export `ColorSource` enum
-- [ ] Consider exporting `SwitchEvent` for advanced users
-
-### src/CasambiBt/_unit.py
-- [ ] Fix `Group.groudId` → `Group.groupId` (BACKWARDS COMPATIBILITY: keep alias)
-- [ ] Add property setters for `Unit.state`, `Unit.online`
-- [ ] Consider making Unit immutable (frozen dataclass)
-- [ ] Add tests for `getStateAsBytes` and `setStateFromBytes`
-
-### src/CasambiBt/_casambi.py
-- [ ] Use weakref for callback lists
-- [ ] Add max callback list size
-- [ ] Add timeout to `connect()` operation
-- [ ] Improve error messages for connection failures
-
-### src/CasambiBt/_client.py
-- [ ] Move packet logging to DEBUG level
-- [ ] Add timeouts to all BLE operations
-- [ ] Add packet length validation
-- [ ] Handle unknown packet types more gracefully
-
-### src/CasambiBt/_network.py
-- [ ] Add retry logic with exponential backoff
-- [ ] Improve cache version migration
-- [ ] Add better error messages for API failures
-
-### demo/web_app.py
-- [ ] REFACTOR: Use async Flask (Quart) or proper threading
-- [ ] Add unit serialization helpers
-- [ ] Add CORS support
-- [ ] Add input validation
-- [ ] Add session persistence
-- [ ] Add proper error handling
-- [ ] Add logging
-
-### demo/static/script.js
-- [ ] Fix state property names (dimmer→level, onoff→onOff, etc.)
-- [ ] Fix unit structure expectations (unitType.controls, etc.)
-- [ ] Add error handling for failed API calls
-- [ ] Improve UI feedback
-
-### demo/templates/index.html
-- [ ] Add loading states
-- [ ] Add error display
-- [ ] Improve layout for mobile
-
----
-
-## ⚠️ BREAKING CHANGES TO CONSIDER
-
-1. **Group.groudId → Group.groupId**: This is a typo that should be fixed. Maintain `groudId` as deprecated alias for backwards compatibility.
-
-2. **Logging reduction**: Users relying on INFO-level packet logs for debugging will need to change to DEBUG.
-
-3. **Callback weak references**: Code that stores callback references in variables may find callbacks disappearing unexpectedly.
-
----
-
-## 🔍 TESTING REQUIREMENTS
-
-Each PR should include:
-- Unit tests for new functionality
-- Integration tests for complex interactions
-- Manual testing of demo application
-- Documentation updates
-
----
-
-## 📅 ESTIMATED TIMELINE
-
-| Phase | Duration | Deliverables |
-|-------|----------|--------------|
-| Phase 1 | 2 weeks | Functional demo, critical bug fixes |
-| Phase 2 | 2 weeks | Robust library, hardened error handling |
-| Phase 3 | 2 weeks | Enhanced features, better UX |
-| Phase 4 | Ongoing | Code quality, technical debt |
-
----
-
-## 🎉 COMPLETION CRITERIA
-
-The project improvements are complete when:
-1. ✅ Demo application is fully functional
-2. ✅ Library has no known critical bugs
-3. ✅ All error types are properly exported
-4. ✅ Memory leaks are fixed
-5. ✅ Timeouts are in place for all external operations
-6. ✅ Type hints are complete and accurate
-7. ✅ Test coverage is >80%
-8. ✅ All documentation is updated
+1. **Fix the lint/type baseline** (item 8) — everything else lands cleaner
+   once `isort`/`black`/`ruff`/`mypy` are green again, and CI is presumably
+   red right now for anyone opening a PR from a clean checkout.
+2. **`groudId` → `groupId`** (item 1) + **export error types** (item 2) —
+   both are small, both are real API papercuts that get more painful to fix
+   the more the current names get depended on.
+3. **Packet logging level** (item 4) — one-line log-level change, meaningful
+   disk/security impact.
+4. **BLE operation timeouts** (item 5) — the highest-effort item, but the
+   only one that turns "device stops responding" into a recoverable error
+   instead of a permanent hang.
+5. Everything else in "OPEN — Robustness" and "LOW PRIORITY" as time allows;
+   none of it is currently blocking real usage of the library or demo.
