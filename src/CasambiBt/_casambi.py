@@ -415,10 +415,17 @@ class Casambi:
         if isinstance(target, Unit):
             control = target.unitType.get_control(control_type)
             if control is None:
-                raise ReadOnlyControlError(
-                    f"Control {control_type.name} is not supported by unit {target.name}."
-                )
-            if control.readonly:
+                # Lights can still be turned on/off via their brightness or
+                # color controls (see the ONOFF dispatch below) even without
+                # a dedicated ONOFF control.
+                if not (
+                    control_type == UnitControlType.ONOFF
+                    and target.unitType.device_role == DeviceRole.LIGHT
+                ):
+                    raise ReadOnlyControlError(
+                        f"Control {control_type.name} is not supported by unit {target.name}."
+                    )
+            elif control.readonly:
                 raise ReadOnlyControlError(
                     f"Control {control_type.name} is read-only on unit {target.name}."
                 )
@@ -454,9 +461,11 @@ class Casambi:
                 )
                 state.onoff = bool(value)
                 await self.setUnitState(target, state)
+            elif value:
+                # Restore the last brightness rather than forcing full brightness.
+                await self.turnOn(target)
             else:
-                # ONOFF uses setLevel with 255 or 0
-                await self.setLevel(target, 255 if cast(int, value) else 0)
+                await self.setLevel(target, 0)
         elif control_type == UnitControlType.COLORSOURCE:
             # Color source switching uses setColor internally in some protocols
             # For now, treat as unsupported to avoid confusion

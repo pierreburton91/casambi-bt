@@ -151,7 +151,7 @@ function renderUnitCard(unit) {
         controls.innerHTML = '<div>No controls available</div>';
     } else {
         // On/Off control
-        if (unit.controls.includes('ONOFF')) {
+        if (unit.controls.includes('ONOFF') || unit.device_role === 'LIGHT') {
             const group = document.createElement('div');
             group.className = 'control-group';
             const label = document.createElement('label');

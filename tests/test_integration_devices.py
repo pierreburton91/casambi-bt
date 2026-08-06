@@ -191,7 +191,7 @@ def test_onoff_dispatch_uses_setstate_for_shades_and_screens():
 
     casa = Casambi()
 
-    calls: dict = {"setUnitState": None, "setLevel": None}
+    calls: dict = {"setUnitState": None, "setLevel": None, "turnOn": None}
 
     async def fake_set_unit_state(target, state):
         calls["setUnitState"] = (target, state)
@@ -199,8 +199,12 @@ def test_onoff_dispatch_uses_setstate_for_shades_and_screens():
     async def fake_set_level(target, level):
         calls["setLevel"] = (target, level)
 
+    async def fake_turn_on(target):
+        calls["turnOn"] = (target,)
+
     casa.setUnitState = fake_set_unit_state
     casa.setLevel = fake_set_level
+    casa.turnOn = fake_turn_on
 
     # Louver (MOTORIZED_SHADE, no DIMMER control): slider position must be
     # preserved and ONOFF must be routed via setUnitState, not setLevel.
@@ -265,10 +269,12 @@ def test_onoff_dispatch_uses_setstate_for_shades_and_screens():
 
     calls["setUnitState"] = None
     calls["setLevel"] = None
+    calls["turnOn"] = None
 
-    # Plain light (DIMMER+ONOFF+RGB => DeviceRole.LIGHT): ONOFF must keep
-    # using setLevel(255/0) as before -- no fixture spec for a plain light
-    # exists under doc/fixtures-specs/, so build one inline.
+    # Plain light (DIMMER+ONOFF+RGB => DeviceRole.LIGHT): ONOFF must restore
+    # the last brightness via turnOn() rather than forcing setLevel(255) --
+    # no fixture spec for a plain light exists under doc/fixtures-specs/, so
+    # build one inline.
     light_type = UnitType(
         id=999,
         model="Test Light",
@@ -312,11 +318,94 @@ def test_onoff_dispatch_uses_setstate_for_shades_and_screens():
 
     asyncio.run(casa.setControl(light_unit, UnitControlType.ONOFF, 1))
     assert calls["setUnitState"] is None, "ONOFF for a light must not use setUnitState"
+    assert calls["setLevel"] is None, "ONOFF=1 for a light should restore last level via turnOn, not setLevel"
+    assert calls["turnOn"] == (
+        light_unit,
+    ), f"ONOFF=1 for a light should call turnOn(target), got {calls['turnOn']}"
+    print("  ✓ Light ONOFF=1 routed through turnOn (restores last brightness)")
+
+    calls["turnOn"] = None
+
+    asyncio.run(casa.setControl(light_unit, UnitControlType.ONOFF, 0))
+    assert calls["setUnitState"] is None, "ONOFF for a light must not use setUnitState"
+    assert calls["turnOn"] is None, "ONOFF=0 for a light must not use turnOn"
     assert calls["setLevel"] == (
         light_unit,
-        255,
-    ), f"ONOFF=1 for a light should call setLevel(target, 255), got {calls['setLevel']}"
-    print("  ✓ Light ONOFF still routed through setLevel")
+        0,
+    ), f"ONOFF=0 for a light should call setLevel(target, 0), got {calls['setLevel']}"
+    print("  ✓ Light ONOFF=0 routed through setLevel(target, 0)")
+
+
+def test_onoff_dispatch_for_light_without_onoff_control():
+    """Test that ONOFF works for lights that have no dedicated ONOFF control (e.g. dimmer-only)."""
+    print("\n🧪 Testing ONOFF dispatch for a dimmer-only light...")
+
+    import asyncio
+
+    casa = Casambi()
+
+    calls: dict = {"setUnitState": None, "setLevel": None, "turnOn": None}
+
+    async def fake_set_unit_state(target, state):
+        calls["setUnitState"] = (target, state)
+
+    async def fake_set_level(target, level):
+        calls["setLevel"] = (target, level)
+
+    async def fake_turn_on(target):
+        calls["turnOn"] = (target,)
+
+    casa.setUnitState = fake_set_unit_state
+    casa.setLevel = fake_set_level
+    casa.turnOn = fake_turn_on
+
+    # Dimmer-only unit: no ONOFF control, but DIMMER alone still classifies
+    # it as DeviceRole.LIGHT.
+    dimmer_type = UnitType(
+        id=1000,
+        model="Test Dimmer Light",
+        manufacturer="Test",
+        mode="test",
+        stateLength=1,
+        controls=[
+            UnitControl(
+                type=UnitControlType.DIMMER,
+                offset=0,
+                length=8,
+                default=0,
+                readonly=False,
+            ),
+        ],
+    )
+    dimmer_unit = Unit(
+        _typeId=dimmer_type.id,
+        deviceId=4,
+        uuid="test-dimmer-light",
+        address="00:11:22:33:44:58",
+        name="Test Dimmer Light",
+        firmwareVersion="1.0",
+        unitType=dimmer_type,
+    )
+    assert dimmer_unit.unitType.device_role == DeviceRole.LIGHT
+    assert dimmer_unit.unitType.get_control(UnitControlType.ONOFF) is None
+
+    asyncio.run(casa.setControl(dimmer_unit, UnitControlType.ONOFF, 1))
+    assert calls["setUnitState"] is None, "ONOFF for a dimmer-only light must not use setUnitState"
+    assert calls["setLevel"] is None, "ONOFF=1 for a dimmer-only light should restore last level via turnOn"
+    assert calls["turnOn"] == (
+        dimmer_unit,
+    ), f"ONOFF=1 for a dimmer-only light should call turnOn(target), got {calls['turnOn']}"
+    print("  ✓ Dimmer-only light ONOFF=1 routed through turnOn")
+
+    calls["turnOn"] = None
+
+    asyncio.run(casa.setControl(dimmer_unit, UnitControlType.ONOFF, 0))
+    assert calls["turnOn"] is None, "ONOFF=0 for a dimmer-only light must not use turnOn"
+    assert calls["setLevel"] == (
+        dimmer_unit,
+        0,
+    ), f"ONOFF=0 for a dimmer-only light should call setLevel(target, 0), got {calls['setLevel']}"
+    print("  ✓ Dimmer-only light ONOFF=0 routed through setLevel(target, 0)")
 
 
 def test_readonly_sensor_rejection():
@@ -345,6 +434,7 @@ if __name__ == "__main__":
         test_state_parsing_from_bytes()
         test_command_dispatch()
         test_onoff_dispatch_uses_setstate_for_shades_and_screens()
+        test_onoff_dispatch_for_light_without_onoff_control()
         test_readonly_sensor_rejection()
 
         print("\n✅ All integration tests passed!")
