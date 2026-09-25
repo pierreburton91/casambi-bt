@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "bluetooth_confirm": {
+        "description": "Set up Casambi network \"{name}\"?",
+        "data": {
+          "password": "Network password"
+        }
+      },
+      "user": {
+        "data": {
+          "address": "Casambi network"
+        }
+      },
+      "reauth_confirm": {
+        "description": "The stored password for \"{name}\" no longer works. Enter the current network password.",
+        "data": {
+          "password": "Network password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid network password.",
+      "cannot_connect": "Could not connect to the Casambi network. Make sure it's powered on and in Bluetooth range.",
+      "timeout_connect": "Timed out while connecting to the Casambi network.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This Casambi network is already configured.",
+      "no_devices_found": "No Casambi networks were found in range.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  }
+}

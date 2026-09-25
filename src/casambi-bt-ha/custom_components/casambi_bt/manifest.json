@@ -1,0 +1,16 @@
+{
+  "domain": "casambi_bt",
+  "name": "Casambi Bluetooth",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["bluetooth"],
+  "documentation": "https://github.com/lkempf/casambi-bt/tree/main/src/casambi-bt-ha",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/lkempf/casambi-bt/issues",
+  "requirements": ["casambi-bt>=0.3.2"],
+  "bluetooth": [
+    { "service_uuid": "0000fe4d-0000-1000-8000-00805f9b34fb" }
+  ],
+  "version": "0.1.0"
+}
