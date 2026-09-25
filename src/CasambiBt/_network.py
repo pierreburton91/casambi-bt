@@ -2,7 +2,7 @@ import json
 import logging
 import pickle
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Final, cast
 
 import httpx
@@ -34,7 +34,14 @@ class _NetworkSession:
     role: int = 3  # TODO: Support other role types?
 
     def expired(self) -> bool:
-        return datetime.utcnow() > self.expires
+        expires = self.expires
+        # A cached session.pck from an incompatible source can carry a
+        # timezone-aware `expires`, which can't be compared against the naive
+        # datetime.utcnow() used elsewhere here. Normalize defensively instead
+        # of crashing the whole setup on a stale/foreign cache entry.
+        if expires.tzinfo is not None:
+            expires = expires.astimezone(UTC).replace(tzinfo=None)
+        return datetime.utcnow() > expires
 
 
 class Network:
