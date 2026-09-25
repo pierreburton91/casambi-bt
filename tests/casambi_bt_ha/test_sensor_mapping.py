@@ -8,10 +8,15 @@ both a cover-classifying control set AND tagged sensor controls.
 import json
 import os
 
-from CasambiBt import DeviceRole, UnitControl, UnitControlType, UnitType
+from custom_components.casambi_bt.CasambiBt import (
+    DeviceRole,
+    UnitControl,
+    UnitControlType,
+    UnitType,
+)
 
 _FIXTURES_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "doc", "fixtures-specs"
+    os.path.dirname(__file__), "..", "..", "doc", "fixtures-specs"
 )
 
 

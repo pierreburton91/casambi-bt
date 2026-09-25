@@ -63,7 +63,7 @@ max-complexity = 25
 [tool.ruff.lint.per-file-ignores]
 # HA custom_components don't conventionally carry docstrings on every trivial
 # entity property override; keep every other rule (F/E/W/UP/B/C/T20/etc) active.
-"src/casambi-bt-ha/**" = ["D"]
+"custom_components/casambi_bt/**" = ["D"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

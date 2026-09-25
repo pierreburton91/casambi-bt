@@ -1,6 +1,11 @@
 """Tests for light color-mode selection logic (_logic.py)."""
 
-from CasambiBt import ColorSource, UnitControl, UnitControlType, UnitType
+from custom_components.casambi_bt.CasambiBt import (
+    ColorSource,
+    UnitControl,
+    UnitControlType,
+    UnitType,
+)
 
 
 def _unit_type(control_types: list[UnitControlType]) -> UnitType:

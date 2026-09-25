@@ -14,9 +14,8 @@ from homeassistant.const import LIGHT_LUX
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from CasambiBt import Unit, UnitControl
-
 from . import _logic
+from .CasambiBt import Unit, UnitControl
 from .const import DOMAIN
 from .coordinator import CasambiBtCoordinator
 from .entity import CasambiBtEntity

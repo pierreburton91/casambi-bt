@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
-from CasambiBt import ColorSource, DeviceRole, UnitControl, UnitControlType, UnitType
+from .CasambiBt import ColorSource, DeviceRole, UnitControl, UnitControlType, UnitType
 
 
 @dataclass(frozen=True)
