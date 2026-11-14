@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 import voluptuous as vol
+from bleak.exc import BleakError
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
@@ -19,6 +20,7 @@ from .CasambiBt.errors import (
     BluetoothError,
     NetworkNotFoundError,
     NetworkOnlineUpdateNeededError,
+    NetworkUpdateError,
     ProtocolError,
     UnsupportedProtocolVersion,
 )
@@ -43,11 +45,17 @@ async def _async_try_connect(
             await probe.connect(ble_device, password)
     except AuthenticationError:
         return "invalid_auth"
-    except (NetworkNotFoundError, BluetoothError):
+    except (NetworkNotFoundError, BluetoothError, BleakError):
+        # BleakError: CasambiBt's bleak transport doesn't wrap BLE stack errors.
         return "cannot_connect"
     except TimeoutError:
         return "timeout_connect"
-    except (ProtocolError, UnsupportedProtocolVersion, NetworkOnlineUpdateNeededError):
+    except (
+        ProtocolError,
+        UnsupportedProtocolVersion,
+        NetworkOnlineUpdateNeededError,
+        NetworkUpdateError,
+    ):
         _LOGGER.debug(
             "Protocol-level error while validating Casambi network", exc_info=True
         )

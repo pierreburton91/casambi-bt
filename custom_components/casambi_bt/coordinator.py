@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from bleak.exc import BleakError
 from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, CONF_PASSWORD
@@ -20,14 +21,7 @@ from homeassistant.exceptions import (
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .CasambiBt import Casambi, Group, Unit, UnitControlType, UnitState
-from .CasambiBt.errors import (
-    AuthenticationError,
-    BluetoothError,
-    NetworkNotFoundError,
-    NetworkOnlineUpdateNeededError,
-    ProtocolError,
-    UnsupportedProtocolVersion,
-)
+from .CasambiBt.errors import AuthenticationError, CasambiBtError
 from .const import (
     CONNECT_TIMEOUT,
     DOMAIN,
@@ -41,13 +35,14 @@ _LOGGER = logging.getLogger(__name__)
 
 # Every failure here just means "not connected yet / lost connection" from the
 # coordinator's perspective - retried with backoff, or surfaced as
-# ConfigEntryNotReady on first setup.
+# ConfigEntryNotReady on first setup so that HA retries instead of leaving the
+# entry in setup_error. AuthenticationError (a CasambiBtError) is handled
+# before these. BleakError is listed because CasambiBt's bleak transport lets
+# BLE stack errors through unwrapped - e.g. a GATT read failing with error 133
+# when the only proxy path to the network has a weak signal.
 _CONNECT_ERRORS: tuple[type[Exception], ...] = (
-    NetworkNotFoundError,
-    BluetoothError,
-    ProtocolError,
-    UnsupportedProtocolVersion,
-    NetworkOnlineUpdateNeededError,
+    CasambiBtError,
+    BleakError,
     TimeoutError,
 )
 

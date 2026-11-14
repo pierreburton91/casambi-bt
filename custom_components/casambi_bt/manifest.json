@@ -18,5 +18,5 @@
   "bluetooth": [
     { "service_uuid": "0000fe4d-0000-1000-8000-00805f9b34fb" }
   ],
-  "version": "0.1.1"
+  "version": "0.1.2"
 }
