@@ -1,5 +1,7 @@
 """Tests for light color-mode selection logic (_logic.py)."""
 
+from types import ModuleType
+
 from custom_components.casambi_bt.CasambiBt import (
     ColorSource,
     UnitControl,
@@ -25,19 +27,19 @@ def _unit_type(control_types: list[UnitControlType]) -> UnitType:
     )
 
 
-def test_dimmer_only_light_is_brightness_mode(logic):
+def test_dimmer_only_light_is_brightness_mode(logic: ModuleType) -> None:
     unit_type = _unit_type([UnitControlType.DIMMER])
     modes = logic.supported_light_color_modes(unit_type)
     assert modes == {"brightness"}
 
 
-def test_onoff_only_light_falls_back_to_onoff_mode(logic):
+def test_onoff_only_light_falls_back_to_onoff_mode(logic: ModuleType) -> None:
     unit_type = _unit_type([UnitControlType.ONOFF])
     modes = logic.supported_light_color_modes(unit_type)
     assert modes == {"onoff"}
 
 
-def test_multi_mode_light_advertises_all_color_controls(logic):
+def test_multi_mode_light_advertises_all_color_controls(logic: ModuleType) -> None:
     unit_type = _unit_type(
         [
             UnitControlType.DIMMER,
@@ -50,16 +52,16 @@ def test_multi_mode_light_advertises_all_color_controls(logic):
     assert modes == {"color_temp", "rgb"}
 
 
-def test_active_mode_follows_colorsource(logic):
+def test_active_mode_follows_colorsource(logic: ModuleType) -> None:
     modes = {"color_temp", "rgb"}
     assert logic.active_light_color_mode(modes, ColorSource.RGB) == "rgb"
     assert logic.active_light_color_mode(modes, ColorSource.TEMPERATURE) == "color_temp"
 
 
-def test_active_mode_unknown_without_colorsource(logic):
+def test_active_mode_unknown_without_colorsource(logic: ModuleType) -> None:
     modes = {"color_temp", "rgb"}
     assert logic.active_light_color_mode(modes, None) is None
 
 
-def test_single_mode_is_always_active(logic):
+def test_single_mode_is_always_active(logic: ModuleType) -> None:
     assert logic.active_light_color_mode({"brightness"}, None) == "brightness"

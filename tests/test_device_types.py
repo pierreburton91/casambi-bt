@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Parameterized tests for round-trip encoding/decoding of control types using fixture specs."""
 
+# Also runnable as a script (see __main__), which reports progress via print().
+# ruff: noqa: T201
+
 import json
 import os
-from CasambiBt._unit import Unit, UnitType, UnitControl, UnitControlType, UnitState
+
+from CasambiBt._unit import Unit, UnitControl, UnitControlType, UnitState, UnitType
 
 
 def load_fixture_spec(filename: str) -> dict:
@@ -11,8 +15,9 @@ def load_fixture_spec(filename: str) -> dict:
     fixture_path = os.path.join(
         os.path.dirname(__file__), "..", "doc", "fixtures-specs", filename
     )
-    with open(fixture_path, "r") as f:
-        return json.load(f)
+    with open(fixture_path) as f:
+        spec: dict = json.load(f)
+    return spec
 
 
 def create_unit_type_from_spec(spec: dict) -> UnitType:
@@ -49,7 +54,9 @@ def create_unit_type_from_spec(spec: dict) -> UnitType:
     )
 
 
-def round_trip_encoding(unit_type: UnitType, control_type: UnitControlType, test_values: list[int]):
+def round_trip_encoding(
+    unit_type: UnitType, control_type: UnitControlType, test_values: list[int]
+) -> None:
     """Test round-trip encoding/decoding for a specific control type."""
     control = unit_type.get_control(control_type)
     if control is None:
@@ -57,7 +64,9 @@ def round_trip_encoding(unit_type: UnitType, control_type: UnitControlType, test
         return
 
     if control.length == 0:
-        print(f"⚠️  Skipping {control_type.name} - zero-length control cannot round-trip")
+        print(
+            f"⚠️  Skipping {control_type.name} - zero-length control cannot round-trip"
+        )
         return
 
     if control.readonly and control_type != UnitControlType.SENSOR:
@@ -75,7 +84,9 @@ def round_trip_encoding(unit_type: UnitType, control_type: UnitControlType, test
         unitType=unit_type,
     )
 
-    print(f"\n🧪 Testing {control_type.name} on {unit_type.model} (min={control.min}, max={control.max})")
+    print(
+        f"\n🧪 Testing {control_type.name} on {unit_type.model} (min={control.min}, max={control.max})"
+    )
 
     for value in test_values:
         # Clamp value to control range if specified
@@ -103,6 +114,7 @@ def round_trip_encoding(unit_type: UnitType, control_type: UnitControlType, test
 
         # Decode back from bytes
         unit.setStateFromBytes(encoded)
+        assert unit.state is not None
 
         # Check the decoded value
         decoded_value = None
@@ -117,6 +129,7 @@ def round_trip_encoding(unit_type: UnitType, control_type: UnitControlType, test
 
         # Allow small tolerance due to integer division in min/max scaling
         tolerance = 1 if (control.min is not None and control.max is not None) else 0
+        assert decoded_value is not None
         if abs(decoded_value - clamped_value) <= tolerance:
             print(f"  ✓ {clamped_value} → encode → decode → {decoded_value}")
         else:
@@ -126,7 +139,7 @@ def round_trip_encoding(unit_type: UnitType, control_type: UnitControlType, test
             )
 
 
-def test_louver_slider():
+def test_louver_slider() -> None:
     """Test SLIDER control on louver fixture."""
     spec = load_fixture_spec("louvers.json")
     unit_type = create_unit_type_from_spec(spec)
@@ -136,7 +149,7 @@ def test_louver_slider():
     round_trip_encoding(unit_type, UnitControlType.SLIDER, test_values)
 
 
-def test_screen_dimmer():
+def test_screen_dimmer() -> None:
     """Test DIMMER control on screen fixture."""
     spec = load_fixture_spec("screen.json")
     unit_type = create_unit_type_from_spec(spec)
@@ -146,7 +159,7 @@ def test_screen_dimmer():
     round_trip_encoding(unit_type, UnitControlType.DIMMER, test_values)
 
 
-def test_sensor_values():
+def test_sensor_values() -> None:
     """Test decoding presence/lux/sensorgroup and tagged sensor values on the sensor platform fixture."""
     spec = load_fixture_spec("sensors-platform.json")
     unit_type = create_unit_type_from_spec(spec)
@@ -202,7 +215,7 @@ def test_sensor_values():
     )
 
 
-def test_temperature_control():
+def test_temperature_control() -> None:
     """Test TEMPERATURE control if present in any fixture."""
     fixtures = ["louvers.json", "screen.json", "sensors-platform.json"]
 

@@ -1,10 +1,12 @@
+"""Quart web app demonstrating the CasambiBt library (python demo/web_app.py)."""
+
 import asyncio
 import contextlib
 import copy
 import logging
 import signal
 import sys
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from bleak.backends.device import BLEDevice
 from quart import Quart, ResponseReturnValue, jsonify, render_template, request
@@ -15,41 +17,61 @@ from CasambiBt._unit import DeviceRole, Unit, UnitControl, UnitControlType, Unit
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-app = Quart(__name__, static_folder='static', template_folder='templates')
+app = Quart(__name__, static_folder="static", template_folder="templates")
 app = cors(app, allow_origin="*")  # For development only
 
 
 # State update message types
 class StateMessage:
-    def __init__(self, msg_type: Literal["unit_update", "disconnected"], data: Unit | None = None) -> None:
+    """Message passed from Casambi callbacks to the state queue processor."""
+
+    def __init__(
+        self, msg_type: Literal["unit_update", "disconnected"], data: Unit | None = None
+    ) -> None:
+        """Create a message of the given type, optionally carrying a unit."""
         self.msg_type: Literal["unit_update", "disconnected"] = msg_type
         self.data: Unit | None = data
 
 
 # Type aliases for state management
-ConnectionStatus = dict[Literal["connected", "network_name", "network_id", "error"], str | bool | None]
+ConnectionStatus = dict[
+    Literal["connected", "network_name", "network_id", "error"], str | bool | None
+]
 UnitsCache = dict[str, Unit]
+# Transport names accepted by get_transport_by_type(), which validates the
+# (user-supplied) name itself and raises ValueError for unknown ones.
+TransportType = Literal["bleak", "esphome", "homeassistant"]
 
 # Global variables for state management
 casambi_instance: Casambi | None = None
-connection_status: ConnectionStatus = {"connected": False, "network_name": None, "network_id": None, "error": None}
+connection_status: ConnectionStatus = {
+    "connected": False,
+    "network_name": None,
+    "network_id": None,
+    "error": None,
+}
 units_cache: UnitsCache = {}
 state_lock: asyncio.Lock = asyncio.Lock()  # For synchronizing access to shared state
 
 discovered_devices: list[BLEDevice] = []  # List of BLEDevice
-state_queue: asyncio.Queue[StateMessage] = asyncio.Queue()  # Async queue for state updates from callbacks
+state_queue: asyncio.Queue[StateMessage] = (
+    asyncio.Queue()
+)  # Async queue for state updates from callbacks
 queue_task: asyncio.Task[None] | None = None  # Background task for processing the queue
 shutdown_event: asyncio.Event | None = None  # Event for graceful shutdown
+# Strong references to tasks spawned from signal handlers, so they aren't
+# garbage-collected before they run.
+signal_tasks: set[asyncio.Task[None]] = set()
 
 
-@app.get('/')
+@app.get("/")
 async def index() -> ResponseReturnValue:
-    return await render_template('index.html')
+    """Serve the single-page frontend."""
+    return await render_template("index.html")
 
 
 async def process_state_queue() -> None:
@@ -58,7 +80,9 @@ async def process_state_queue() -> None:
     while shutdown_event is None or not shutdown_event.is_set():
         try:
             # Use timeout to allow periodic shutdown checks
-            message: StateMessage = await asyncio.wait_for(state_queue.get(), timeout=0.1)
+            message: StateMessage = await asyncio.wait_for(
+                state_queue.get(), timeout=0.1
+            )
             try:
                 async with state_lock:
                     if message.msg_type == "unit_update":
@@ -70,7 +94,9 @@ async def process_state_queue() -> None:
                         connection_status["error"] = "Disconnected"
                         logger.info("Connection status updated to disconnected")
             except Exception as e:
-                logger.error(f"Error processing state queue message: {e}", exc_info=True)
+                logger.error(
+                    f"Error processing state queue message: {e}", exc_info=True
+                )
             finally:
                 state_queue.task_done()
         except TimeoutError:
@@ -86,8 +112,8 @@ async def process_state_queue() -> None:
 
 # Casambi callback handlers
 def on_unit_changed(unit: Unit) -> None:
-    """Callback for unit state changes - called synchronously by Casambi lib.
-    
+    """Handle unit state changes - called synchronously by Casambi lib.
+
     Puts a message into the async queue for processing by the background task.
     """
     try:
@@ -96,9 +122,10 @@ def on_unit_changed(unit: Unit) -> None:
     except Exception as e:
         logger.error(f"Failed to queue unit update: {e}")
 
+
 def on_disconnected() -> None:
-    """Callback for disconnection - called synchronously by Casambi lib.
-    
+    """Handle disconnection - called synchronously by Casambi lib.
+
     Puts a message into the async queue for processing by the background task.
     """
     try:
@@ -146,25 +173,33 @@ def serialize_unit(unit: Unit) -> dict[str, Any]:
 
         # Extract XY components
         if unit.state.xy:
-            state_dict["x"] = float(unit.state.xy[0]) if unit.state.xy[0] is not None else None
-            state_dict["y"] = float(unit.state.xy[1]) if unit.state.xy[1] is not None else None
+            state_dict["x"] = (
+                float(unit.state.xy[0]) if unit.state.xy[0] is not None else None
+            )
+            state_dict["y"] = (
+                float(unit.state.xy[1]) if unit.state.xy[1] is not None else None
+            )
 
-        state_dict.update({
-            "dimmer": unit.state.dimmer,
-            "white": unit.state.white,
-            "temperature": unit.state.temperature,
-            "vertical": unit.state.vertical,
-            "slider": unit.state.slider,
-            "sensor": unit.state.sensor,
-            "onoff": unit.state.onoff,
-            "colorSource": unit.state.colorsource.value if unit.state.colorsource else None,
-            "presence": unit.state.presence,
-            "lux": unit.state.lux,
-            "sensorgroup": unit.state.sensorgroup,
-            # Frontend expects these names
-            "level": unit.state.dimmer,
-            "onOff": unit.state.onoff,
-        })
+        state_dict.update(
+            {
+                "dimmer": unit.state.dimmer,
+                "white": unit.state.white,
+                "temperature": unit.state.temperature,
+                "vertical": unit.state.vertical,
+                "slider": unit.state.slider,
+                "sensor": unit.state.sensor,
+                "onoff": unit.state.onoff,
+                "colorSource": (
+                    unit.state.colorsource.value if unit.state.colorsource else None
+                ),
+                "presence": unit.state.presence,
+                "lux": unit.state.lux,
+                "sensorgroup": unit.state.sensorgroup,
+                # Frontend expects these names
+                "level": unit.state.dimmer,
+                "onOff": unit.state.onoff,
+            }
+        )
         # Remove None values for cleaner output
         state_dict = {k: v for k, v in state_dict.items() if v is not None}
 
@@ -210,14 +245,18 @@ def serialize_unit(unit: Unit) -> dict[str, Any]:
 
 # API Endpoints
 
-@app.get('/api/networks')
+
+@app.get("/api/networks")
 async def get_networks() -> ResponseReturnValue:
     """Discover available Casambi networks using default transport."""
     global discovered_devices
     try:
         logger.info("Starting network discovery")
         discovered_devices = await discover()
-        networks = [{"address": d.address, "name": d.name or "Unknown"} for d in discovered_devices]
+        networks = [
+            {"address": d.address, "name": d.name or "Unknown"}
+            for d in discovered_devices
+        ]
         logger.info(f"Discovered {len(networks)} networks")
         return jsonify({"success": True, "data": networks})
     except Exception as e:
@@ -227,7 +266,8 @@ async def get_networks() -> ResponseReturnValue:
 
 # Transport-related endpoints
 
-@app.get('/api/transports')
+
+@app.get("/api/transports")
 async def get_available_transports() -> ResponseReturnValue:
     """List available transport types with their availability."""
     import os
@@ -235,89 +275,127 @@ async def get_available_transports() -> ResponseReturnValue:
     transports = {}
 
     # Bleak is always available (but may not work on all platforms)
-    transports['bleak'] = {
-        'name': 'Bleak (Local Bluetooth)',
-        'available': True,
-        'config_fields': [],
-        'description': 'Uses local Bluetooth adapter (bleak library)',
+    transports["bleak"] = {
+        "name": "Bleak (Local Bluetooth)",
+        "available": True,
+        "config_fields": [],
+        "description": "Uses local Bluetooth adapter (bleak library)",
     }
 
     # Check ESPHome
     try:
-        import aioesphomeapi
-        transports['esphome'] = {
-            'name': 'ESPHome Proxy',
-            'available': True,
-            'config_fields': ['host', 'port', 'noise_psk'],
-            'description': 'Uses ESPHome Bluetooth Proxy device directly',
+        import aioesphomeapi  # noqa: F401
+
+        transports["esphome"] = {
+            "name": "ESPHome Proxy",
+            "available": True,
+            "config_fields": ["host", "port", "noise_psk"],
+            "description": "Uses ESPHome Bluetooth Proxy device directly",
             # Add environment variable defaults for ESPHome
-            'env_defaults': {
-                'host': os.environ.get('ESPHOME_HOST', ''),
-                'port': os.environ.get('ESPHOME_PORT', ''),
-                'noise_psk': os.environ.get('ESPHOME_NOISE_PSK', '')
-            }
+            "env_defaults": {
+                "host": os.environ.get("ESPHOME_HOST", ""),
+                "port": os.environ.get("ESPHOME_PORT", ""),
+                "noise_psk": os.environ.get("ESPHOME_NOISE_PSK", ""),
+            },
         }
     except ImportError:
-        transports['esphome'] = {
-            'name': 'ESPHome Proxy',
-            'available': False,
-            'missing_dependency': 'aioesphomeapi',
-            'config_fields': ['host', 'port', 'noise_psk'],
-            'description': 'Uses ESPHome Bluetooth Proxy device directly',
+        transports["esphome"] = {
+            "name": "ESPHome Proxy",
+            "available": False,
+            "missing_dependency": "aioesphomeapi",
+            "config_fields": ["host", "port", "noise_psk"],
+            "description": "Uses ESPHome Bluetooth Proxy device directly",
             # Still provide env defaults even if dependency is missing
-            'env_defaults': {
-                'host': os.environ.get('ESPHOME_HOST', ''),
-                'port': os.environ.get('ESPHOME_PORT', ''),
-                'noise_psk': os.environ.get('ESPHOME_NOISE_PSK', '')
-            }
+            "env_defaults": {
+                "host": os.environ.get("ESPHOME_HOST", ""),
+                "port": os.environ.get("ESPHOME_PORT", ""),
+                "noise_psk": os.environ.get("ESPHOME_NOISE_PSK", ""),
+            },
         }
 
     # Check Home Assistant
     try:
-        import homeassistant_api
-        transports['homeassistant'] = {
-            'name': 'Home Assistant',
-            'available': True,
-            'config_fields': ['host', 'port', 'esphome_host', 'esphome_port', 'token', 'ssl', 'verify_ssl', 'esphome_entity', 'noise_psk'],
-            'description': 'Validates against Home Assistant, then connects directly to an ESPHome Bluetooth Proxy',
+        import homeassistant_api  # noqa: F401
+
+        transports["homeassistant"] = {
+            "name": "Home Assistant",
+            "available": True,
+            "config_fields": [
+                "host",
+                "port",
+                "esphome_host",
+                "esphome_port",
+                "token",
+                "ssl",
+                "verify_ssl",
+                "esphome_entity",
+                "noise_psk",
+            ],
+            "description": "Validates against Home Assistant, then connects directly to an ESPHome Bluetooth Proxy",
             # Add environment variable defaults for Home Assistant
-            'env_defaults': {
-                'host': os.environ.get('HOME_ASSISTANT_HOST', os.environ.get('HA_HOST', '')),
-                'token': os.environ.get('HOME_ASSISTANT_TOKEN', os.environ.get('HA_TOKEN', '')),
-                'port': os.environ.get('HOME_ASSISTANT_PORT', os.environ.get('HA_PORT', '')),
-                'ssl': os.environ.get('HOME_ASSISTANT_SSL', 'true'),
-                'verify_ssl': os.environ.get('HOME_ASSISTANT_VERIFY_SSL', 'true'),
-                'esphome_host': os.environ.get('ESPHOME_HOST', os.environ.get('ESP_HOME_HOSTNAME', '')),
-                'esphome_port': os.environ.get('ESPHOME_PORT', ''),
-            }
+            "env_defaults": {
+                "host": os.environ.get(
+                    "HOME_ASSISTANT_HOST", os.environ.get("HA_HOST", "")
+                ),
+                "token": os.environ.get(
+                    "HOME_ASSISTANT_TOKEN", os.environ.get("HA_TOKEN", "")
+                ),
+                "port": os.environ.get(
+                    "HOME_ASSISTANT_PORT", os.environ.get("HA_PORT", "")
+                ),
+                "ssl": os.environ.get("HOME_ASSISTANT_SSL", "true"),
+                "verify_ssl": os.environ.get("HOME_ASSISTANT_VERIFY_SSL", "true"),
+                "esphome_host": os.environ.get(
+                    "ESPHOME_HOST", os.environ.get("ESP_HOME_HOSTNAME", "")
+                ),
+                "esphome_port": os.environ.get("ESPHOME_PORT", ""),
+            },
         }
     except ImportError:
-        transports['homeassistant'] = {
-            'name': 'Home Assistant',
-            'available': False,
-            'missing_dependency': 'homeassistant-api',
-            'config_fields': ['host', 'port', 'esphome_host', 'esphome_port', 'token', 'ssl', 'verify_ssl', 'esphome_entity', 'noise_psk'],
-            'description': 'Validates against Home Assistant, then connects directly to an ESPHome Bluetooth Proxy',
+        transports["homeassistant"] = {
+            "name": "Home Assistant",
+            "available": False,
+            "missing_dependency": "homeassistant-api",
+            "config_fields": [
+                "host",
+                "port",
+                "esphome_host",
+                "esphome_port",
+                "token",
+                "ssl",
+                "verify_ssl",
+                "esphome_entity",
+                "noise_psk",
+            ],
+            "description": "Validates against Home Assistant, then connects directly to an ESPHome Bluetooth Proxy",
             # Still provide env defaults even if dependency is missing
-            'env_defaults': {
-                'host': os.environ.get('HOME_ASSISTANT_HOST', os.environ.get('HA_HOST', '')),
-                'token': os.environ.get('HOME_ASSISTANT_TOKEN', os.environ.get('HA_TOKEN', '')),
-                'port': os.environ.get('HOME_ASSISTANT_PORT', os.environ.get('HA_PORT', '')),
-                'ssl': os.environ.get('HOME_ASSISTANT_SSL', 'true'),
-                'verify_ssl': os.environ.get('HOME_ASSISTANT_VERIFY_SSL', 'true'),
-                'esphome_host': os.environ.get('ESPHOME_HOST', os.environ.get('ESP_HOME_HOSTNAME', '')),
-                'esphome_port': os.environ.get('ESPHOME_PORT', ''),
-            }
+            "env_defaults": {
+                "host": os.environ.get(
+                    "HOME_ASSISTANT_HOST", os.environ.get("HA_HOST", "")
+                ),
+                "token": os.environ.get(
+                    "HOME_ASSISTANT_TOKEN", os.environ.get("HA_TOKEN", "")
+                ),
+                "port": os.environ.get(
+                    "HOME_ASSISTANT_PORT", os.environ.get("HA_PORT", "")
+                ),
+                "ssl": os.environ.get("HOME_ASSISTANT_SSL", "true"),
+                "verify_ssl": os.environ.get("HOME_ASSISTANT_VERIFY_SSL", "true"),
+                "esphome_host": os.environ.get(
+                    "ESPHOME_HOST", os.environ.get("ESP_HOME_HOSTNAME", "")
+                ),
+                "esphome_port": os.environ.get("ESPHOME_PORT", ""),
+            },
         }
 
     logger.debug(f"Available transports: {list(transports.keys())}")
     return jsonify({"success": True, "data": transports})
 
 
-@app.post('/api/transports/<transport_type>/discover')
+@app.post("/api/transports/<transport_type>/discover")
 async def discover_with_transport(transport_type: str) -> ResponseReturnValue:
     """Discover networks using a specific transport type.
-    
+
     Request body should contain transport configuration:
     - bleak: No config needed
     - esphome: {host, port?, noise_psk?}
@@ -331,35 +409,36 @@ async def discover_with_transport(transport_type: str) -> ResponseReturnValue:
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
-            return value.lower() in ('true', '1', 'yes', 'on')
+            return value.lower() in ("true", "1", "yes", "on")
         return bool(value)
 
     try:
         data: dict[str, Any] | None = await request.get_json()
-        config: dict[str, Any] = data.get('config', {}) if data else {}
+        config: dict[str, Any] = data.get("config", {}) if data else {}
 
         # Convert string booleans to actual booleans for ssl and verify_ssl
-        if 'ssl' in config:
-            config['ssl'] = _str_to_bool(config['ssl'])
-        if 'verify_ssl' in config:
-            config['verify_ssl'] = _str_to_bool(config['verify_ssl'])
+        if "ssl" in config:
+            config["ssl"] = _str_to_bool(config["ssl"])
+        if "verify_ssl" in config:
+            config["verify_ssl"] = _str_to_bool(config["verify_ssl"])
 
         logger.info(f"Discovering with transport type: {transport_type}")
 
-        transport = get_transport_by_type(transport_type, **config)
+        transport = get_transport_by_type(cast(TransportType, transport_type), **config)
         devices = await transport.discover(timeout=10.0)
 
         discovered_devices = devices
-        networks = [{"address": d.address, "name": d.name or "Unknown"} for d in devices]
-        logger.info(f"Discovered {len(networks)} networks with {transport_type} transport")
+        networks = [
+            {"address": d.address, "name": d.name or "Unknown"} for d in devices
+        ]
+        logger.info(
+            f"Discovered {len(networks)} networks with {transport_type} transport"
+        )
         return jsonify({"success": True, "data": networks})
 
     except ImportError as e:
         logger.error(f"Missing dependency for {transport_type}: {e}")
-        return jsonify({
-            "success": False,
-            "error": f"Missing dependency: {e}"
-        }), 500
+        return jsonify({"success": False, "error": f"Missing dependency: {e}"}), 500
     except ValueError as e:
         logger.error(f"Invalid configuration for {transport_type}: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
@@ -368,10 +447,10 @@ async def discover_with_transport(transport_type: str) -> ResponseReturnValue:
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.post('/api/connect')
+@app.post("/api/connect")
 async def connect_network() -> ResponseReturnValue:
     """Connect to a Casambi network.
-    
+
     Optional parameters:
     - transport_type: Type of transport to use (bleak, esphome, homeassistant)
     - transport_config: Configuration for the specified transport
@@ -379,17 +458,21 @@ async def connect_network() -> ResponseReturnValue:
     global casambi_instance, connection_status, units_cache, discovered_devices
     try:
         data: dict[str, Any] | None = await request.get_json()
-        address: str | None = data.get('address') if data else None
-        password: str | None = data.get('password') if data else None
-        transport_type: str | None = data.get('transport_type') if data else None
-        transport_config: dict[str, Any] = data.get('transport_config', {}) if data else {}
+        address: str | None = data.get("address") if data else None
+        password: str | None = data.get("password") if data else None
+        transport_type: str | None = data.get("transport_type") if data else None
+        transport_config: dict[str, Any] = (
+            data.get("transport_config", {}) if data else {}
+        )
 
         if not address:
             logger.warning("Connect request missing address")
             return jsonify({"success": False, "error": "Address is required"}), 400
 
         # Find the BLEDevice by address
-        device: BLEDevice | None = next((d for d in discovered_devices if d.address == address), None)
+        device: BLEDevice | None = next(
+            (d for d in discovered_devices if d.address == address), None
+        )
         if not device:
             logger.warning(f"Device not found for address: {address}")
             return jsonify({"success": False, "error": "Device not found"}), 404
@@ -400,7 +483,10 @@ async def connect_network() -> ResponseReturnValue:
         transport = None
         if transport_type:
             from CasambiBt._transport_factory import get_transport_by_type
-            transport = get_transport_by_type(transport_type, **transport_config)
+
+            transport = get_transport_by_type(
+                cast(TransportType, transport_type), **transport_config
+            )
             logger.info(f"Using transport: {transport_type}")
 
         # Create Casambi instance with the specified transport
@@ -408,7 +494,7 @@ async def connect_network() -> ResponseReturnValue:
         casambi_instance.registerUnitChangedHandler(on_unit_changed)
         casambi_instance.registerDisconnectCallback(on_disconnected)
 
-        await casambi_instance.connect(device, password or '')
+        await casambi_instance.connect(device, password or "")
 
         # Update status with lock protection
         async with state_lock:
@@ -433,7 +519,7 @@ async def connect_network() -> ResponseReturnValue:
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.get('/api/status')
+@app.get("/api/status")
 async def get_status() -> ResponseReturnValue:
     """Get current connection status."""
     async with state_lock:
@@ -443,7 +529,7 @@ async def get_status() -> ResponseReturnValue:
         return jsonify({"success": True, "data": status_copy})
 
 
-@app.post('/api/disconnect')
+@app.post("/api/disconnect")
 async def disconnect_network() -> ResponseReturnValue:
     """Disconnect from the current network."""
     global casambi_instance, connection_status, units_cache
@@ -455,7 +541,12 @@ async def disconnect_network() -> ResponseReturnValue:
         async with state_lock:
             casambi_instance = None
             units_cache.clear()
-            connection_status = {"connected": False, "network_name": None, "network_id": None, "error": None}
+            connection_status = {
+                "connected": False,
+                "network_name": None,
+                "network_id": None,
+                "error": None,
+            }
         logger.info("Disconnection complete, state cleared")
         return jsonify({"success": True})
     except Exception as e:
@@ -463,19 +554,21 @@ async def disconnect_network() -> ResponseReturnValue:
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.get('/api/units')
+@app.get("/api/units")
 async def get_units() -> ResponseReturnValue:
     """Get all units in the connected network."""
     async with state_lock:
         if not connection_status["connected"]:
             logger.warning("Units request while not connected")
             return jsonify({"success": False, "error": "Not connected"}), 400
-        serialized: dict[str, dict[str, Any]] = {uid: serialize_unit(u) for uid, u in units_cache.items()}
+        serialized: dict[str, dict[str, Any]] = {
+            uid: serialize_unit(u) for uid, u in units_cache.items()
+        }
         logger.debug(f"Returning {len(serialized)} units")
     return jsonify({"success": True, "data": serialized})
 
 
-@app.get('/api/units/<unit_id>/state')
+@app.get("/api/units/<unit_id>/state")
 async def get_unit_state(unit_id: str) -> ResponseReturnValue:
     """Get the state of a specific unit."""
     async with state_lock:
@@ -487,7 +580,7 @@ async def get_unit_state(unit_id: str) -> ResponseReturnValue:
     return jsonify({"success": True, "data": serialize_unit(unit)})
 
 
-@app.post('/api/units/<unit_id>/control')
+@app.post("/api/units/<unit_id>/control")
 async def control_unit(unit_id: str) -> ResponseReturnValue:
     """Send a control command to a unit."""
     global casambi_instance
@@ -505,20 +598,32 @@ async def control_unit(unit_id: str) -> ResponseReturnValue:
             logger.warning("Control request missing data")
             return jsonify({"success": False, "error": "Request data is required"}), 400
 
-        control_type_str: str | None = data.get('control_type')
-        value: Any = data.get('value')
+        control_type_str: str | None = data.get("control_type")
+        value: Any = data.get("value")
 
         if not control_type_str:
             logger.warning("Control request missing control_type")
             return jsonify({"success": False, "error": "control_type is required"}), 400
 
         # Map string to UnitControlType
-        control_type: UnitControlType | None = getattr(UnitControlType, control_type_str, None)
+        control_type: UnitControlType | None = getattr(
+            UnitControlType, control_type_str, None
+        )
         if not control_type:
             logger.warning(f"Invalid control type: {control_type_str}")
-            return jsonify({"success": False, "error": f"Invalid control type: {control_type_str}"}), 400
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": f"Invalid control type: {control_type_str}",
+                    }
+                ),
+                400,
+            )
 
-        logger.info(f"Sending {control_type_str}={value} to unit {unit.name} ({unit_id})")
+        logger.info(
+            f"Sending {control_type_str}={value} to unit {unit.name} ({unit_id})"
+        )
         await casambi_instance.setControl(unit, control_type, value)
         logger.debug("Control command sent successfully")
 
@@ -531,7 +636,7 @@ async def control_unit(unit_id: str) -> ResponseReturnValue:
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.post('/api/units/<unit_id>/position')
+@app.post("/api/units/<unit_id>/position")
 async def set_unit_position(unit_id: str) -> ResponseReturnValue:
     """Set a motorized shade/screen's open/close position as a 0-100 percentage.
 
@@ -550,19 +655,27 @@ async def set_unit_position(unit_id: str) -> ResponseReturnValue:
             return jsonify({"success": False, "error": "Unit not found"}), 404
     try:
         data: dict[str, Any] | None = await request.get_json()
-        if not data or 'percent' not in data:
+        if not data or "percent" not in data:
             logger.warning("Position request missing percent")
             return jsonify({"success": False, "error": "percent is required"}), 400
 
-        percent = data['percent']
+        percent = data["percent"]
         if not isinstance(percent, (int, float)) or percent < 0 or percent > 100:
             logger.warning(f"Invalid position percent: {percent}")
-            return jsonify({"success": False, "error": "percent must be between 0 and 100"}), 400
+            return (
+                jsonify(
+                    {"success": False, "error": "percent must be between 0 and 100"}
+                ),
+                400,
+            )
 
         position = get_position_control(unit)
         if position is None:
             logger.warning(f"Unit {unit_id} has no position control")
-            return jsonify({"success": False, "error": "Unit has no position control"}), 400
+            return (
+                jsonify({"success": False, "error": "Unit has no position control"}),
+                400,
+            )
         control_type, _, min_v, max_v = position
 
         native_value = round(percent / 100 * (max_v - min_v) + min_v)
@@ -573,7 +686,9 @@ async def set_unit_position(unit_id: str) -> ResponseReturnValue:
         else:
             state.dimmer = native_value
 
-        logger.info(f"Setting position={percent}% ({control_type.name}={native_value}) on unit {unit.name} ({unit_id})")
+        logger.info(
+            f"Setting position={percent}% ({control_type.name}={native_value}) on unit {unit.name} ({unit_id})"
+        )
         await casambi_instance.setUnitState(unit, state)
         logger.debug("Position command sent successfully")
 
@@ -637,6 +752,7 @@ async def shutdown_handler() -> None:
 
 
 async def main() -> None:
+    """Run the web app until it stops or a shutdown signal is received."""
     global queue_task, shutdown_event
 
     # Initialize the background task for processing the queue
@@ -649,18 +765,24 @@ async def main() -> None:
     # Try Unix-style signal handlers first (add_signal_handler)
     try:
         loop = asyncio.get_running_loop()
-        loop.add_signal_handler(signal.SIGINT, lambda: asyncio.create_task(shutdown_handler()))
-        loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.create_task(shutdown_handler()))
+        loop.add_signal_handler(
+            signal.SIGINT, lambda: asyncio.create_task(shutdown_handler())
+        )
+        loop.add_signal_handler(
+            signal.SIGTERM, lambda: asyncio.create_task(shutdown_handler())
+        )
         logger.debug("Using Unix-style signal handlers")
     except (AttributeError, NotImplementedError):
         # Fall back to standard signal module for Windows compatibility
         # Note: On Windows, SIGTERM is not supported, only SIGINT (Ctrl+C)
         def handle_signal(signum: int, frame: object) -> None:
             logger.info(f"Received signal {signum}, initiating shutdown...")
-            asyncio.create_task(shutdown_handler())
+            task = asyncio.create_task(shutdown_handler())
+            signal_tasks.add(task)
+            task.add_done_callback(signal_tasks.discard)
 
         signal.signal(signal.SIGINT, handle_signal)
-        if hasattr(signal, 'SIGTERM'):
+        if hasattr(signal, "SIGTERM"):
             signal.signal(signal.SIGTERM, handle_signal)
         logger.debug("Using standard signal handlers")
 
@@ -668,12 +790,14 @@ async def main() -> None:
 
     try:
         # Run the app and wait for shutdown signal concurrently
-        app_task: asyncio.Task[None] = asyncio.create_task(app.run_task(host='0.0.0.0', port=8080))
+        app_task: asyncio.Task[None] = asyncio.create_task(
+            app.run_task(host="0.0.0.0", port=8080)
+        )
 
         # Wait for either the app to finish or shutdown signal
         done, pending = await asyncio.wait(
             [app_task, asyncio.create_task(shutdown_event.wait())],
-            return_when=asyncio.FIRST_COMPLETED
+            return_when=asyncio.FIRST_COMPLETED,
         )
 
         # Cancel any remaining tasks
@@ -690,8 +814,9 @@ async def main() -> None:
         await cleanup()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import asyncio
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

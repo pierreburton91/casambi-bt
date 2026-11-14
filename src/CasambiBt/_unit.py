@@ -574,9 +574,7 @@ class Unit:
             ):
                 clampedSensor = min(c.max, max(c.min, state.sensor))
                 sensorMask = 2**c.length - 1
-                scaledValue = (sensorMask * (clampedSensor - c.min)) // (
-                    c.max - c.min
-                )
+                scaledValue = (sensorMask * (clampedSensor - c.min)) // (c.max - c.min)
             elif (
                 c.type == UnitControlType.COLORSOURCE and state.colorsource is not None
             ):

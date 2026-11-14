@@ -12,6 +12,9 @@ Usage:
     -d : Enable debug logging
 """
 
+# Interactive CLI example: print() is its user-facing output.
+# ruff: noqa: T201
+
 import asyncio
 import logging
 import sys
@@ -38,8 +41,12 @@ async def print_device_inventory(casa: Casambi) -> None:
 
     # Organize by device role
     lights = [u for u in casa.units if u.unitType.device_role == DeviceRole.LIGHT]
-    shades = [u for u in casa.units if u.unitType.device_role == DeviceRole.MOTORIZED_SHADE]
-    screens = [u for u in casa.units if u.unitType.device_role == DeviceRole.MOTORIZED_SCREEN]
+    shades = [
+        u for u in casa.units if u.unitType.device_role == DeviceRole.MOTORIZED_SHADE
+    ]
+    screens = [
+        u for u in casa.units if u.unitType.device_role == DeviceRole.MOTORIZED_SCREEN
+    ]
     sensors = [u for u in casa.units if u.unitType.device_role == DeviceRole.SENSOR]
     unknown = [u for u in casa.units if u.unitType.device_role == DeviceRole.UNKNOWN]
 
@@ -48,7 +55,7 @@ async def print_device_inventory(casa: Casambi) -> None:
         for u in lights:
             print(
                 f"  - {u.name} (ID: {u.deviceId}): "
-                f"Brightness={u.state.dimmer}, Online={u.online}"
+                f"Brightness={u.state.dimmer if u.state else None}, Online={u.online}"
             )
 
     if shades:
@@ -56,7 +63,7 @@ async def print_device_inventory(casa: Casambi) -> None:
         for u in shades:
             print(
                 f"  - {u.name} (ID: {u.deviceId}): "
-                f"Position={u.state.slider}, Online={u.online}"
+                f"Position={u.state.slider if u.state else None}, Online={u.online}"
             )
 
     if screens:
@@ -128,7 +135,9 @@ async def demonstrate_light_control(casa: Casambi) -> None:
 
 async def demonstrate_shade_control(casa: Casambi) -> None:
     """Demonstrate controlling motorized shades using setControl()."""
-    shades = [u for u in casa.units if u.unitType.device_role == DeviceRole.MOTORIZED_SHADE]
+    shades = [
+        u for u in casa.units if u.unitType.device_role == DeviceRole.MOTORIZED_SHADE
+    ]
     if not shades:
         print("\n✓ No motorized shades found in network")
         return
@@ -168,7 +177,7 @@ async def demonstrate_sensor_reading(casa: Casambi) -> None:
     print("Available sensor measurements:")
     for control in sensor.unitType.controls:
         if control.type == UnitControlType.SENSOR:
-            print(f"  - Sensor measurement available")
+            print("  - Sensor measurement available")
 
     # Try to set a sensor value (should fail gracefully)
     print("\nAttempting to set sensor value (should fail)...")
@@ -179,14 +188,14 @@ async def demonstrate_sensor_reading(casa: Casambi) -> None:
         print(f"  ✓ Correctly rejected: {e}")
 
     # Display current sensor state if available
-    if sensor.state.slider is not None:
+    if sensor.state is not None and sensor.state.slider is not None:
         print(f"Current sensor reading: {sensor.state.slider}")
     else:
         print("No current sensor reading available")
 
 
 async def main() -> None:
-    """Main entry point for the example."""
+    """Run the example: discover, connect, and demonstrate each device type."""
     logLevel = logging.INFO
     if "-d" in sys.argv:
         logLevel = logging.DEBUG

@@ -7,6 +7,7 @@ both a cover-classifying control set AND tagged sensor controls.
 
 import json
 import os
+from types import ModuleType
 
 from custom_components.casambi_bt.CasambiBt import (
     DeviceRole,
@@ -54,7 +55,7 @@ def _load_unit_type(filename: str) -> UnitType:
     )
 
 
-def test_louver_is_a_cover_but_still_has_tagged_sensors(logic):
+def test_louver_is_a_cover_but_still_has_tagged_sensors(logic: ModuleType) -> None:
     unit_type = _load_unit_type("louvers.json")
     assert unit_type.device_role == DeviceRole.MOTORIZED_SHADE
 
@@ -67,7 +68,7 @@ def test_louver_is_a_cover_but_still_has_tagged_sensors(logic):
     }
 
 
-def test_screen_is_a_cover_but_still_has_tagged_sensors(logic):
+def test_screen_is_a_cover_but_still_has_tagged_sensors(logic: ModuleType) -> None:
     unit_type = _load_unit_type("screen.json")
     assert unit_type.device_role == DeviceRole.MOTORIZED_SCREEN
 
@@ -75,19 +76,19 @@ def test_screen_is_a_cover_but_still_has_tagged_sensors(logic):
     assert {c.name for c in tagged} == {"Time Up", "Time Down"}
 
 
-def test_no_lux_or_presence_on_shade_fixtures(logic):
+def test_no_lux_or_presence_on_shade_fixtures(logic: ModuleType) -> None:
     for fixture in ("louvers.json", "screen.json"):
         unit_type = _load_unit_type(fixture)
         assert not logic.has_lux_control(unit_type)
         assert not logic.has_presence_control(unit_type)
 
 
-def test_plain_sensor_controls_excludes_tagged_ones(logic):
+def test_plain_sensor_controls_excludes_tagged_ones(logic: ModuleType) -> None:
     unit_type = _load_unit_type("louvers.json")
     assert logic.has_plain_sensor_controls(unit_type) == []
 
 
-def test_sensor_platform_has_lux_and_presence(logic):
+def test_sensor_platform_has_lux_and_presence(logic: ModuleType) -> None:
     unit_type = _load_unit_type("sensors-platform.json")
     assert unit_type.device_role == DeviceRole.SENSOR
     assert logic.has_lux_control(unit_type)

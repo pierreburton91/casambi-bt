@@ -63,13 +63,13 @@ class Encryptor:
         if len(nonce) != 16:
             raise ValueError("Nonce must be 16 bytes long.")
 
-        nonce = bytearray(nonce)
+        counterBlock = bytearray(nonce)
 
         counter = 0
         result = b""
         for i in range(0, len(packet), 16):
-            nonce[12:] = counter.to_bytes(4, "little")
-            block = _encHelper(self._blockCipher, nonce)
+            counterBlock[12:] = counter.to_bytes(4, "little")
+            block = _encHelper(self._blockCipher, bytes(counterBlock))
             rem = min(i + 16, len(packet))
             result += _xor(block[: rem - i], packet[i:rem])
             counter += 1

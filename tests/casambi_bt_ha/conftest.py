@@ -41,7 +41,7 @@ for _name, _path in (
 
 
 @pytest.fixture(scope="session")
-def logic():
+def logic() -> types.ModuleType:
     """Load _logic.py directly, bypassing the casambi_bt package's __init__.py."""
     spec = importlib.util.spec_from_file_location(_LOGIC_MODULE_NAME, _LOGIC_PATH)
     assert spec is not None and spec.loader is not None

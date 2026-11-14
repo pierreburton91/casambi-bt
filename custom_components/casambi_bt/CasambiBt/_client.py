@@ -119,7 +119,6 @@ class CasambiClient:
                 address=self.address,
                 name=None,
                 details={},
-                rssi=0,
             )
         )
 
@@ -250,7 +249,7 @@ class CasambiClient:
                 raise ProtocolError("Failed to negotiate key!")
             else:
                 self._logger.info("Key exchange successful")
-                self._encryptor = Encryptor(self._transportKey)
+                self._encryptor = Encryptor(bytes(self._transportKey))
 
                 # Skip auth if the network doesn't use a key.
                 if self._network.keyStore.getKey():

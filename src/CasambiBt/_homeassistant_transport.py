@@ -171,7 +171,9 @@ class HomeAssistantTransport(BluetoothTransport):
         :param timeout: Maximum time to scan in seconds
         :return: List of discovered Casambi BLEDevice objects
         """
-        _LOGGER.debug(f"Starting discovery with Home Assistant transport, timeout={timeout}s")
+        _LOGGER.debug(
+            f"Starting discovery with Home Assistant transport, timeout={timeout}s"
+        )
 
         try:
             esphome_transport = await self._get_esphome_transport()
@@ -194,7 +196,9 @@ class HomeAssistantTransport(BluetoothTransport):
         :param disconnected_callback: Called when the link to the device goes down
         :return: A HomeAssistantTransportConnection instance
         """
-        _LOGGER.debug(f"Connecting to device {device.address} via Home Assistant transport")
+        _LOGGER.debug(
+            f"Connecting to device {device.address} via Home Assistant transport"
+        )
 
         try:
             esphome_transport = await self._get_esphome_transport()
@@ -234,19 +238,27 @@ class HomeAssistantTransportConnection(TransportConnection):
         try:
             return await self._esphome_connection.read_gatt_char(char_uuid)
         except Exception as e:
-            raise BluetoothError(f"Failed to read characteristic {char_uuid}: {e}") from e
+            raise BluetoothError(
+                f"Failed to read characteristic {char_uuid}: {e}"
+            ) from e
 
     async def write_gatt_char(self, char_uuid: str, data: bytes) -> None:
         try:
             await self._esphome_connection.write_gatt_char(char_uuid, data)
         except Exception as e:
-            raise BluetoothError(f"Failed to write characteristic {char_uuid}: {e}") from e
+            raise BluetoothError(
+                f"Failed to write characteristic {char_uuid}: {e}"
+            ) from e
 
-    async def start_notify(self, char_uuid: str, callback: Callable[[bytes], None]) -> None:
+    async def start_notify(
+        self, char_uuid: str, callback: Callable[[bytes], None]
+    ) -> None:
         try:
             await self._esphome_connection.start_notify(char_uuid, callback)
         except Exception as e:
-            raise BluetoothError(f"Failed to start notifications for {char_uuid}: {e}") from e
+            raise BluetoothError(
+                f"Failed to start notifications for {char_uuid}: {e}"
+            ) from e
 
     async def stop_notify(self, char_uuid: str) -> None:
         try:

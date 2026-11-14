@@ -55,19 +55,35 @@ async def main() -> None:
         print("\nDemonstrating device-agnostic control...")
 
         # Control all motorized shades (louvers)
-        motorized_shades = [u for u in casa.units if u.unitType.device_role == DeviceRole.MOTORIZED_SHADE]
+        motorized_shades = [
+            u
+            for u in casa.units
+            if u.unitType.device_role == DeviceRole.MOTORIZED_SHADE
+        ]
         if motorized_shades:
-            print(f"Setting {len(motorized_shades)} motorized shade(s) to 50% position...")
+            print(
+                f"Setting {len(motorized_shades)} motorized shade(s) to 50% position..."
+            )
             for shade in motorized_shades:
-                await casa.setControl(shade, UnitControlType.SLIDER, 71)  # 50% of 0-142 range
+                await casa.setControl(
+                    shade, UnitControlType.SLIDER, 71
+                )  # 50% of 0-142 range
             await asyncio.sleep(2)
 
         # Control all motorized screens
-        motorized_screens = [u for u in casa.units if u.unitType.device_role == DeviceRole.MOTORIZED_SCREEN]
+        motorized_screens = [
+            u
+            for u in casa.units
+            if u.unitType.device_role == DeviceRole.MOTORIZED_SCREEN
+        ]
         if motorized_screens:
-            print(f"Setting {len(motorized_screens)} motorized screen(s) to 75% position...")
+            print(
+                f"Setting {len(motorized_screens)} motorized screen(s) to 75% position..."
+            )
             for screen in motorized_screens:
-                await casa.setControl(screen, UnitControlType.DIMMER, 191)  # 75% of 0-255 range
+                await casa.setControl(
+                    screen, UnitControlType.DIMMER, 191
+                )  # 75% of 0-255 range
             await asyncio.sleep(2)
 
         # Control all lights

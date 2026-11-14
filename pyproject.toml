@@ -64,6 +64,9 @@ max-complexity = 25
 # HA custom_components don't conventionally carry docstrings on every trivial
 # entity property override; keep every other rule (F/E/W/UP/B/C/T20/etc) active.
 "custom_components/casambi_bt/**" = ["D"]
+# Test functions are named after the behavior they check; docstrings would
+# only restate the name.
+"tests/**" = ["D"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

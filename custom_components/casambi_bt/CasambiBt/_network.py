@@ -37,11 +37,11 @@ class _NetworkSession:
         expires = self.expires
         # A cached session.pck from an incompatible source can carry a
         # timezone-aware `expires`, which can't be compared against the naive
-        # datetime.utcnow() used elsewhere here. Normalize defensively instead
+        # UTC datetimes used elsewhere here. Normalize defensively instead
         # of crashing the whole setup on a stale/foreign cache entry.
         if expires.tzinfo is not None:
             expires = expires.astimezone(UTC).replace(tzinfo=None)
-        return datetime.utcnow() > expires
+        return datetime.now(UTC).replace(tzinfo=None) > expires
 
 
 class Network:
@@ -176,9 +176,9 @@ class Network:
         if res.status_code == httpx.codes.OK:
             # Parse session
             sessionJson = res.json()
-            sessionJson["expires"] = datetime.utcfromtimestamp(
-                sessionJson["expires"] / 1000
-            )
+            sessionJson["expires"] = datetime.fromtimestamp(
+                sessionJson["expires"] / 1000, UTC
+            ).replace(tzinfo=None)
             self._session = _NetworkSession(**sessionJson)
             self._logger.info("Login sucessful.")
             await self._saveSesion()
@@ -337,7 +337,7 @@ class Network:
             cachedType, cacheExpiry = self._unitTypes[id]
 
             # We don't want to cache types forever so use an expiry date.
-            if cacheExpiry < datetime.utcnow():
+            if cacheExpiry < datetime.now(UTC).replace(tzinfo=None):
                 self._logger.info("Cache expiry for type %i. Refetching.", id)
                 self._unitTypes.pop(id)
             else:
@@ -351,7 +351,7 @@ class Network:
             self._logger.error(f"Getting unit info returned {res.status_code}")
             self._unitTypes[id] = (
                 None,
-                datetime.utcnow() + timedelta(days=7),
+                datetime.now(UTC).replace(tzinfo=None) + timedelta(days=7),
             )
             return None
 
@@ -406,7 +406,7 @@ class Network:
         # Chache unit type
         self._unitTypes[unitTypeObj.id] = (
             unitTypeObj,
-            datetime.utcnow() + timedelta(days=28),
+            datetime.now(UTC).replace(tzinfo=None) + timedelta(days=28),
         )
 
         self._logger.info("Sucessfully fetched unit type.")

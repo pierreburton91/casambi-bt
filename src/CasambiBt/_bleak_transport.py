@@ -110,7 +110,7 @@ class BleakTransportConnection(TransportConnection):
         """Read a GATT characteristic by UUID."""
         if not self._client.is_connected:
             raise BluetoothError("Not connected to device")
-        return await self._client.read_gatt_char(char_uuid)
+        return bytes(await self._client.read_gatt_char(char_uuid))
 
     async def write_gatt_char(self, char_uuid: str, data: bytes) -> None:
         """Write to a GATT characteristic by UUID."""
@@ -129,9 +129,7 @@ class BleakTransportConnection(TransportConnection):
         self._notify_callbacks[char_uuid] = callback
 
         # Create the internal handler that wraps the user callback
-        def notify_handler(
-            sender: BleakGATTCharacteristic, data: bytearray
-        ) -> None:
+        def notify_handler(sender: BleakGATTCharacteristic, data: bytearray) -> None:
             """Handle internal notification."""
             if sender.uuid in self._notify_callbacks:
                 self._notify_callbacks[sender.uuid](bytes(data))

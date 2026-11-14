@@ -17,8 +17,9 @@ def _make_session(expires: datetime) -> _NetworkSession:
 
 def test_expired_with_naive_datetime() -> None:
     """A regular, freshly-created session compares fine using naive datetimes."""
-    assert _make_session(datetime.utcnow() - timedelta(days=1)).expired()
-    assert not _make_session(datetime.utcnow() + timedelta(days=1)).expired()
+    now = datetime.now(UTC).replace(tzinfo=None)
+    assert _make_session(now - timedelta(days=1)).expired()
+    assert not _make_session(now + timedelta(days=1)).expired()
 
 
 def test_expired_with_timezone_aware_datetime() -> None:

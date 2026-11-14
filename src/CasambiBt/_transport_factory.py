@@ -76,6 +76,7 @@ def get_transport_by_type(
 
     if normalized_type == "bleak":
         from ._bleak_transport import BleakTransport
+
         return BleakTransport()
 
     elif normalized_type == "esphome":
@@ -124,7 +125,9 @@ def get_transport_by_type(
         if not token:
             raise ValueError("Home Assistant transport requires 'token' parameter")
         if not esphome_host:
-            raise ValueError("Home Assistant transport requires 'esphome_host' parameter")
+            raise ValueError(
+                "Home Assistant transport requires 'esphome_host' parameter"
+            )
 
         return HomeAssistantTransport(
             host=host,

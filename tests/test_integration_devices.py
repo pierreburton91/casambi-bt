@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
 """Integration tests for device state parsing and command dispatch using mocked data."""
 
+# Also runnable as a script (see __main__), which reports progress via print().
+# ruff: noqa: T201
+
 import json
 import os
+
 from CasambiBt import Casambi
-from CasambiBt._unit import Unit, UnitType, UnitControl, UnitControlType, UnitState, DeviceRole
+from CasambiBt._unit import (
+    DeviceRole,
+    Group,
+    Unit,
+    UnitControl,
+    UnitControlType,
+    UnitState,
+    UnitType,
+)
 
 
 def load_fixture_spec(filename: str) -> dict:
@@ -12,8 +24,9 @@ def load_fixture_spec(filename: str) -> dict:
     fixture_path = os.path.join(
         os.path.dirname(__file__), "..", "doc", "fixtures-specs", filename
     )
-    with open(fixture_path, "r") as f:
-        return json.load(f)
+    with open(fixture_path) as f:
+        spec: dict = json.load(f)
+    return spec
 
 
 def create_unit_type_from_spec(spec: dict) -> UnitType:
@@ -50,7 +63,7 @@ def create_unit_type_from_spec(spec: dict) -> UnitType:
     )
 
 
-def test_device_role_classification():
+def test_device_role_classification() -> None:
     """Test that devices are correctly classified by role."""
     print("🧪 Testing device role classification...")
 
@@ -100,7 +113,7 @@ def test_device_role_classification():
     print("  ✓ Sensor platform classified as SENSOR")
 
 
-def test_state_parsing_from_bytes():
+def test_state_parsing_from_bytes() -> None:
     """Test parsing state bytes into UnitState for different device types."""
     print("\n🧪 Testing state parsing from bytes...")
 
@@ -121,12 +134,19 @@ def test_state_parsing_from_bytes():
     # Based on fixture: slider at offset 28, length 8, min=0, max=142
     state_bytes = bytearray(louver_type.stateLength)
     state_bytes[28 // 8] = 0xF0  # Max slider position encoded across the byte boundary
-    state_bytes[36 // 8] = 0x1F  # Lower nibble contains slider high bits and bit4 is ON/OFF
+    state_bytes[36 // 8] = (
+        0x1F  # Lower nibble contains slider high bits and bit4 is ON/OFF
+    )
 
     louver_unit.setStateFromBytes(bytes(state_bytes))
+    assert louver_unit.state is not None
 
-    assert louver_unit.state.slider == 142, f"Expected slider=142, got {louver_unit.state.slider}"
-    assert louver_unit.state.onoff == True, f"Expected onoff=True, got {louver_unit.state.onoff}"
+    assert (
+        louver_unit.state.slider == 142
+    ), f"Expected slider=142, got {louver_unit.state.slider}"
+    assert (
+        louver_unit.state.onoff is True
+    ), f"Expected onoff=True, got {louver_unit.state.onoff}"
     print("  ✓ Louver state parsed correctly (slider=142, onoff=True)")
 
     # Test screen state parsing
@@ -146,16 +166,23 @@ def test_state_parsing_from_bytes():
     # Based on fixture: dimmer at offset 28, length 8
     state_bytes = bytearray(screen_type.stateLength)
     state_bytes[28 // 8] = 0x00  # 50% dimmer position encoded across the byte boundary
-    state_bytes[36 // 8] = 0x18  # Lower nibble contains dimmer high bits and bit4 is ON/OFF
+    state_bytes[36 // 8] = (
+        0x18  # Lower nibble contains dimmer high bits and bit4 is ON/OFF
+    )
 
     screen_unit.setStateFromBytes(bytes(state_bytes))
+    assert screen_unit.state is not None
 
-    assert screen_unit.state.dimmer == 128, f"Expected dimmer=128, got {screen_unit.state.dimmer}"
-    assert screen_unit.state.onoff == True, f"Expected onoff=True, got {screen_unit.state.onoff}"
+    assert (
+        screen_unit.state.dimmer == 128
+    ), f"Expected dimmer=128, got {screen_unit.state.dimmer}"
+    assert (
+        screen_unit.state.onoff is True
+    ), f"Expected onoff=True, got {screen_unit.state.onoff}"
     print("  ✓ Screen state parsed correctly (dimmer=128, onoff=True)")
 
 
-def test_command_dispatch():
+def test_command_dispatch() -> None:
     """Test that setControl dispatches to correct underlying methods."""
     print("\n🧪 Testing command dispatch via setControl...")
 
@@ -172,18 +199,24 @@ def test_command_dispatch():
         try:
             # This should fail due to no connection, but not due to readonly checks
             import asyncio
+
             asyncio.run(casa.setControl(None, control_type, value))
             assert False, f"Expected connection error for {control_type}"
         except Exception as e:
             # Should fail with connection-related error, not ReadOnlyControlError
             error_str = str(e).lower()
-            assert "readonly" not in error_str, f"Unexpected readonly error for {control_type}: {e}"
-            assert any(keyword in error_str for keyword in ["connection", "state", "expected"]), \
-                f"Unexpected error type for {control_type}: {e}"
-            print(f"  ✓ {control_type} passed readonly validation (failed later as expected)")
+            assert (
+                "readonly" not in error_str
+            ), f"Unexpected readonly error for {control_type}: {e}"
+            assert any(
+                keyword in error_str for keyword in ["connection", "state", "expected"]
+            ), f"Unexpected error type for {control_type}: {e}"
+            print(
+                f"  ✓ {control_type} passed readonly validation (failed later as expected)"
+            )
 
 
-def test_onoff_dispatch_uses_setstate_for_shades_and_screens():
+def test_onoff_dispatch_uses_setstate_for_shades_and_screens() -> None:
     """Test that ONOFF routes through setUnitState (OpCode.SetState) for shades/screens, not setLevel."""
     print("\n🧪 Testing ONOFF dispatch for motorized shades/screens...")
 
@@ -193,18 +226,18 @@ def test_onoff_dispatch_uses_setstate_for_shades_and_screens():
 
     calls: dict = {"setUnitState": None, "setLevel": None, "turnOn": None}
 
-    async def fake_set_unit_state(target, state):
+    async def fake_set_unit_state(target: Unit, state: UnitState) -> None:
         calls["setUnitState"] = (target, state)
 
-    async def fake_set_level(target, level):
+    async def fake_set_level(target: Unit | Group | None, level: int) -> None:
         calls["setLevel"] = (target, level)
 
-    async def fake_turn_on(target):
+    async def fake_turn_on(target: Unit | Group | None) -> None:
         calls["turnOn"] = (target,)
 
-    casa.setUnitState = fake_set_unit_state
-    casa.setLevel = fake_set_level
-    casa.turnOn = fake_turn_on
+    casa.setUnitState = fake_set_unit_state  # type: ignore[method-assign]
+    casa.setLevel = fake_set_level  # type: ignore[method-assign]
+    casa.turnOn = fake_turn_on  # type: ignore[method-assign]
 
     # Louver (MOTORIZED_SHADE, no DIMMER control): slider position must be
     # preserved and ONOFF must be routed via setUnitState, not setLevel.
@@ -318,7 +351,9 @@ def test_onoff_dispatch_uses_setstate_for_shades_and_screens():
 
     asyncio.run(casa.setControl(light_unit, UnitControlType.ONOFF, 1))
     assert calls["setUnitState"] is None, "ONOFF for a light must not use setUnitState"
-    assert calls["setLevel"] is None, "ONOFF=1 for a light should restore last level via turnOn, not setLevel"
+    assert (
+        calls["setLevel"] is None
+    ), "ONOFF=1 for a light should restore last level via turnOn, not setLevel"
     assert calls["turnOn"] == (
         light_unit,
     ), f"ONOFF=1 for a light should call turnOn(target), got {calls['turnOn']}"
@@ -329,14 +364,16 @@ def test_onoff_dispatch_uses_setstate_for_shades_and_screens():
     asyncio.run(casa.setControl(light_unit, UnitControlType.ONOFF, 0))
     assert calls["setUnitState"] is None, "ONOFF for a light must not use setUnitState"
     assert calls["turnOn"] is None, "ONOFF=0 for a light must not use turnOn"
-    assert calls["setLevel"] == (
+    # .get(): after the `calls["setLevel"] is None` checks above, mypy assumes the
+    # entry is still None, unaware that asyncio.run() just set it.
+    assert calls.get("setLevel") == (
         light_unit,
         0,
     ), f"ONOFF=0 for a light should call setLevel(target, 0), got {calls['setLevel']}"
     print("  ✓ Light ONOFF=0 routed through setLevel(target, 0)")
 
 
-def test_onoff_dispatch_for_light_without_onoff_control():
+def test_onoff_dispatch_for_light_without_onoff_control() -> None:
     """Test that ONOFF works for lights that have no dedicated ONOFF control (e.g. dimmer-only)."""
     print("\n🧪 Testing ONOFF dispatch for a dimmer-only light...")
 
@@ -346,18 +383,18 @@ def test_onoff_dispatch_for_light_without_onoff_control():
 
     calls: dict = {"setUnitState": None, "setLevel": None, "turnOn": None}
 
-    async def fake_set_unit_state(target, state):
+    async def fake_set_unit_state(target: Unit, state: UnitState) -> None:
         calls["setUnitState"] = (target, state)
 
-    async def fake_set_level(target, level):
+    async def fake_set_level(target: Unit | Group | None, level: int) -> None:
         calls["setLevel"] = (target, level)
 
-    async def fake_turn_on(target):
+    async def fake_turn_on(target: Unit | Group | None) -> None:
         calls["turnOn"] = (target,)
 
-    casa.setUnitState = fake_set_unit_state
-    casa.setLevel = fake_set_level
-    casa.turnOn = fake_turn_on
+    casa.setUnitState = fake_set_unit_state  # type: ignore[method-assign]
+    casa.setLevel = fake_set_level  # type: ignore[method-assign]
+    casa.turnOn = fake_turn_on  # type: ignore[method-assign]
 
     # Dimmer-only unit: no ONOFF control, but DIMMER alone still classifies
     # it as DeviceRole.LIGHT.
@@ -390,8 +427,12 @@ def test_onoff_dispatch_for_light_without_onoff_control():
     assert dimmer_unit.unitType.get_control(UnitControlType.ONOFF) is None
 
     asyncio.run(casa.setControl(dimmer_unit, UnitControlType.ONOFF, 1))
-    assert calls["setUnitState"] is None, "ONOFF for a dimmer-only light must not use setUnitState"
-    assert calls["setLevel"] is None, "ONOFF=1 for a dimmer-only light should restore last level via turnOn"
+    assert (
+        calls["setUnitState"] is None
+    ), "ONOFF for a dimmer-only light must not use setUnitState"
+    assert (
+        calls["setLevel"] is None
+    ), "ONOFF=1 for a dimmer-only light should restore last level via turnOn"
     assert calls["turnOn"] == (
         dimmer_unit,
     ), f"ONOFF=1 for a dimmer-only light should call turnOn(target), got {calls['turnOn']}"
@@ -400,15 +441,19 @@ def test_onoff_dispatch_for_light_without_onoff_control():
     calls["turnOn"] = None
 
     asyncio.run(casa.setControl(dimmer_unit, UnitControlType.ONOFF, 0))
-    assert calls["turnOn"] is None, "ONOFF=0 for a dimmer-only light must not use turnOn"
-    assert calls["setLevel"] == (
+    assert (
+        calls["turnOn"] is None
+    ), "ONOFF=0 for a dimmer-only light must not use turnOn"
+    # .get(): after the `calls["setLevel"] is None` check above, mypy assumes the
+    # entry is still None, unaware that asyncio.run() just set it.
+    assert calls.get("setLevel") == (
         dimmer_unit,
         0,
     ), f"ONOFF=0 for a dimmer-only light should call setLevel(target, 0), got {calls['setLevel']}"
     print("  ✓ Dimmer-only light ONOFF=0 routed through setLevel(target, 0)")
 
 
-def test_readonly_sensor_rejection():
+def test_readonly_sensor_rejection() -> None:
     """Test that sensor controls are rejected as read-only."""
     print("\n🧪 Testing sensor readonly rejection...")
 
@@ -417,17 +462,23 @@ def test_readonly_sensor_rejection():
     try:
         # This should be rejected immediately as read-only
         import asyncio
+
         asyncio.run(casa.setControl(None, UnitControlType.SENSOR, 25))
         assert False, "Expected ReadOnlyControlError for SENSOR control"
     except Exception as e:
         from CasambiBt.errors import ReadOnlyControlError
-        assert isinstance(e, ReadOnlyControlError), f"Expected ReadOnlyControlError, got {type(e)}: {e}"
+
+        assert isinstance(
+            e, ReadOnlyControlError
+        ), f"Expected ReadOnlyControlError, got {type(e)}: {e}"
         assert "Sensors are read-only" in str(e), f"Unexpected error message: {e}"
         print("  ✓ SENSOR control correctly rejected as read-only")
 
 
 if __name__ == "__main__":
-    print("🧪 Running integration tests for device state parsing and command dispatch...")
+    print(
+        "🧪 Running integration tests for device state parsing and command dispatch..."
+    )
 
     try:
         test_device_role_classification()

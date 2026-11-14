@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """Test sensor command rejection for read-only controls."""
 
+# Also runnable as a script (see __main__), which reports progress via print().
+# ruff: noqa: T201
+
 import asyncio
+
 from CasambiBt import Casambi
 from CasambiBt._unit import UnitControlType
 from CasambiBt.errors import ReadOnlyControlError
 
 
-def test_sensor_control_rejection():
+def test_sensor_control_rejection() -> None:
     """Verify that attempting to set a SENSOR control raises ReadOnlyControlError."""
     casa = Casambi()
-    
+
     # Attempt to set a sensor value should raise ReadOnlyControlError
     try:
         # This should raise before any network operations
@@ -23,10 +27,10 @@ def test_sensor_control_rejection():
         assert False, f"Unexpected exception: {e}"
 
 
-def test_other_controls_allowed():
+def test_other_controls_allowed() -> None:
     """Verify that non-sensor controls don't raise ReadOnlyControlError immediately."""
     casa = Casambi()
-    
+
     # These should not raise ReadOnlyControlError (may fail later due to no connection)
     allowed_controls = [
         (UnitControlType.DIMMER, 128),
@@ -34,7 +38,7 @@ def test_other_controls_allowed():
         (UnitControlType.TEMPERATURE, 3000),
         (UnitControlType.ONOFF, 1),
     ]
-    
+
     for control_type, value in allowed_controls:
         try:
             # This will fail later due to no connection, but not due to readonly
@@ -45,7 +49,9 @@ def test_other_controls_allowed():
         except Exception as e:
             # Expected to fail due to connection, not readonly
             assert "Expected state" in str(e) or "connection" in str(e).lower()
-            print(f"✓ {control_type} control passed readonly check (failed later as expected)")
+            print(
+                f"✓ {control_type} control passed readonly check (failed later as expected)"
+            )
 
 
 if __name__ == "__main__":

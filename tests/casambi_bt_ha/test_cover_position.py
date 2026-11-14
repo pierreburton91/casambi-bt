@@ -2,6 +2,7 @@
 
 import json
 import os
+from types import ModuleType
 
 from custom_components.casambi_bt.CasambiBt import (
     UnitControl,
@@ -48,7 +49,7 @@ def _load_unit_type(filename: str) -> UnitType:
     )
 
 
-def test_shade_position_uses_slider_native_range(logic):
+def test_shade_position_uses_slider_native_range(logic: ModuleType) -> None:
     unit_type = _load_unit_type("louvers.json")
     position = logic.resolve_position_control(unit_type)
     assert position is not None
@@ -56,7 +57,7 @@ def test_shade_position_uses_slider_native_range(logic):
     assert (position.native_min, position.native_max) == (0, 142)
 
 
-def test_screen_position_uses_fixed_dimmer_range(logic):
+def test_screen_position_uses_fixed_dimmer_range(logic: ModuleType) -> None:
     unit_type = _load_unit_type("screen.json")
     position = logic.resolve_position_control(unit_type)
     assert position is not None
@@ -64,7 +65,7 @@ def test_screen_position_uses_fixed_dimmer_range(logic):
     assert (position.native_min, position.native_max) == (0, 255)
 
 
-def test_shade_percent_round_trip(logic):
+def test_shade_percent_round_trip(logic: ModuleType) -> None:
     unit_type = _load_unit_type("louvers.json")
     position = logic.resolve_position_control(unit_type)
     assert position is not None
@@ -79,7 +80,7 @@ def test_shade_percent_round_trip(logic):
         assert abs(round_tripped - percent) <= 1
 
 
-def test_screen_percent_round_trip(logic):
+def test_screen_percent_round_trip(logic: ModuleType) -> None:
     unit_type = _load_unit_type("screen.json")
     position = logic.resolve_position_control(unit_type)
     assert position is not None
@@ -94,7 +95,7 @@ def test_screen_percent_round_trip(logic):
         assert abs(round_tripped - percent) <= 1
 
 
-def test_percent_clamped_to_range(logic):
+def test_percent_clamped_to_range(logic: ModuleType) -> None:
     assert logic.native_to_percent(-10, 0, 100) == 0
     assert logic.native_to_percent(110, 0, 100) == 100
     assert logic.percent_to_native(150, 0, 255) == 255
