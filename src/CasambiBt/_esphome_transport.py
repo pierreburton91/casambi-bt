@@ -203,10 +203,14 @@ class ESPHomeTransport(BluetoothTransport):
 
         return list(discovered_devices.values())
 
-    async def connect(self, device: BLEDevice) -> "ESPHomeTransportConnection":
+    async def connect(
+        self,
+        device: BLEDevice,
+        disconnected_callback: Callable[[], None] | None = None,
+    ) -> "ESPHomeTransportConnection":
         """Connect to a Casambi device via ESPHome."""
         api = await self._get_api()
-        return ESPHomeTransportConnection(api, device.address)
+        return ESPHomeTransportConnection(api, device.address, disconnected_callback)
 
 
 class ESPHomeTransportConnection(TransportConnection):
@@ -215,10 +219,16 @@ class ESPHomeTransportConnection(TransportConnection):
     Maps BLE operations to aioesphomeapi calls.
     """
 
-    def __init__(self, api: APIClient, device_address: str):
+    def __init__(
+        self,
+        api: APIClient,
+        device_address: str,
+        disconnected_callback: Callable[[], None] | None = None,
+    ):
         self._api = api
         self._device_address = device_address
         self._device_address_int = self._mac_to_int(device_address)
+        self._disconnected_callback = disconnected_callback
         self._is_connected = False
         self._services: Any | None = None  # Cached services
         self._notify_subscriptions: dict[int, tuple[Callable[[int, bytes], None], Callable[[], None]]] = {}
@@ -249,6 +259,15 @@ class ESPHomeTransportConnection(TransportConnection):
             if connected:
                 self._is_connected = True
                 _LOGGER.debug(f"Connected to {self._device_address}, MTU={mtu}")
+            elif connection_complete.is_set():
+                # The link dropped after the connection was established.
+                if self._is_connected:
+                    self._is_connected = False
+                    _LOGGER.warning(
+                        f"Lost connection to {self._device_address}, error={error}"
+                    )
+                    if self._disconnected_callback is not None:
+                        self._disconnected_callback()
             else:
                 self._is_connected = False
                 _LOGGER.error(f"Connection failed to {self._device_address}, error={error}")
@@ -281,12 +300,13 @@ class ESPHomeTransportConnection(TransportConnection):
     async def disconnect(self) -> None:
         """Disconnect from the BLE device."""
         if self._is_connected:
+            # Mark first so connection_callback doesn't report this as a lost link.
+            self._is_connected = False
             try:
                 await self._api.bluetooth_device_disconnect(
                     self._device_address_int,
                     timeout=10.0
                 )
-                self._is_connected = False
             except Exception as e:
                 _LOGGER.error(f"Error disconnecting: {e}")
 

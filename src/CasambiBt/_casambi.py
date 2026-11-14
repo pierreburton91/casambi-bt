@@ -521,7 +521,7 @@ class Casambi:
     def _dataCallback(
         self, packetType: IncomingPacketType, data: dict[str, Any] | SwitchEvent
     ) -> None:
-        self._logger.info(f"Incomming data callback of type {packetType}")
+        self._logger.debug(f"Incomming data callback of type {packetType}")
         if packetType == IncomingPacketType.UnitState:
             unitData = cast(dict[str, Any], data)
             self._logger.debug(

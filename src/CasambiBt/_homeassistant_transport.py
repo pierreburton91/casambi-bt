@@ -183,17 +183,22 @@ class HomeAssistantTransport(BluetoothTransport):
         except Exception as e:
             raise BluetoothError(f"Discovery failed: {e}") from e
 
-    async def connect(self, device: BLEDevice) -> "HomeAssistantTransportConnection":
+    async def connect(
+        self,
+        device: BLEDevice,
+        disconnected_callback: Callable[[], None] | None = None,
+    ) -> "HomeAssistantTransportConnection":
         """Connect to a Casambi device via the configured ESPHome proxy.
 
         :param device: The BLEDevice to connect to
+        :param disconnected_callback: Called when the link to the device goes down
         :return: A HomeAssistantTransportConnection instance
         """
         _LOGGER.debug(f"Connecting to device {device.address} via Home Assistant transport")
 
         try:
             esphome_transport = await self._get_esphome_transport()
-            connection = await esphome_transport.connect(device)
+            connection = await esphome_transport.connect(device, disconnected_callback)
             return HomeAssistantTransportConnection(connection, self)
         except BluetoothError:
             raise

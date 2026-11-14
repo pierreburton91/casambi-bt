@@ -145,7 +145,12 @@ class CasambiBtCoordinator(DataUpdateCoordinator[dict[str, Unit]]):
 
             try:
                 async with self._op_lock, asyncio.timeout(CONNECT_TIMEOUT):
-                    await self._casambi.connect(ble_device, self._password)
+                    # A command sent while we were waiting may already have
+                    # reconnected the client (Casambi._send retries once after
+                    # reconnecting). Connecting again here would open a second
+                    # BLE link and orphan that one.
+                    if not self._casambi.connected:
+                        await self._casambi.connect(ble_device, self._password)
             except AuthenticationError:
                 _LOGGER.warning(
                     "Casambi network %s rejected the stored password; starting reauth",

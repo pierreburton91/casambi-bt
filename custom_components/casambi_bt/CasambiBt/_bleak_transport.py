@@ -53,7 +53,11 @@ class BleakTransport(BluetoothTransport):
 
         return discovered_devices
 
-    async def connect(self, device: BLEDevice) -> "BleakTransportConnection":
+    async def connect(
+        self,
+        device: BLEDevice,
+        disconnected_callback: Callable[[], None] | None = None,
+    ) -> "BleakTransportConnection":
         """Connect to a device and return a BleakTransportConnection."""
         from bleak_retry_connector import (
             BleakNotFoundError,
@@ -61,10 +65,17 @@ class BleakTransport(BluetoothTransport):
             establish_connection,
         )
 
+        def on_bleak_disconnect(_client: BleakClient) -> None:
+            if disconnected_callback is not None:
+                disconnected_callback()
+
         try:
             await close_stale_connections(device)
             client = await establish_connection(
-                BleakClient, device, "Casambi Network"
+                BleakClient,
+                device,
+                "Casambi Network",
+                disconnected_callback=on_bleak_disconnect,
             )
             return BleakTransportConnection(client, device)
         except BleakNotFoundError as e:

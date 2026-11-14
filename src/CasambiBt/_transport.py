@@ -79,10 +79,18 @@ class BluetoothTransport(ABC):
         ...
 
     @abstractmethod
-    async def connect(self, device: BLEDevice) -> TransportConnection:
+    async def connect(
+        self,
+        device: BLEDevice,
+        disconnected_callback: Callable[[], None] | None = None,
+    ) -> TransportConnection:
         """Connect to a BLE device and return a connection object.
 
         :param device: The BLEDevice to connect to.
+        :param disconnected_callback: Called with no arguments, on the event loop,
+            when the link to the device goes down. Implementations may also call it
+            for a disconnect requested through TransportConnection.disconnect(), so
+            callers must tolerate that.
         :return: A TransportConnection instance for the established connection.
         """
         ...

@@ -125,7 +125,9 @@ class CasambiClient:
 
         try:
             # Use transport to connect
-            self._connection = await self._transport.connect(device)
+            self._connection = await self._transport.connect(
+                device, self._on_disconnect
+            )
 
             if not self._connection.is_connected:
                 self._logger.error("Failed to connect via transport")
@@ -133,19 +135,36 @@ class CasambiClient:
 
         except Exception as e:
             self._logger.error("Failed to connect.", exc_info=True)
+            self._cancelCallbackTask()
             raise BluetoothError from e
 
         self._logger.info(f"Connected to {self.address}")
         self._connectionState = ConnectionState.CONNECTED
 
-    async def _on_disconnect(self) -> None:
-        """Handle disconnection from transport."""
-        if self._connectionState != ConnectionState.NONE:
-            self._logger.info(f"Received disconnect callback from {self.address}")
-        if self._connectionState == ConnectionState.AUTHENTICATED:
-            self._logger.debug("Executing disconnect callback.")
-            self._disconnectedCallback()
+    def _cancelCallbackTask(self) -> None:
+        if self._callbackTask is not None:
+            self._callbackTask.cancel()
+            self._callbackTask = None
+
+    def _on_disconnect(self) -> None:
+        """Handle the transport reporting that the link went down.
+
+        Without this, a connection lost outside of disconnect() (out of range,
+        adapter or proxy restart, ...) leaves the client AUTHENTICATED on a dead
+        link and nobody is told to reconnect.
+        """
+        if self._connectionState == ConnectionState.NONE:
+            # Already torn down - disconnect() sets NONE before closing the
+            # transport, which may still report its own intentional disconnect.
+            return
+
+        wasAuthenticated = self._connectionState == ConnectionState.AUTHENTICATED
+        self._logger.warning(f"Lost connection to {self.address}.")
         self._connectionState = ConnectionState.NONE
+        self._cancelCallbackTask()
+
+        if wasAuthenticated:
+            self._disconnectedCallback()
 
     async def exchangeKey(self) -> None:
         self._checkState(ConnectionState.CONNECTED)
@@ -438,7 +457,7 @@ class CasambiClient:
         raw_encrypted_packet = data[:]
 
         # Log raw encrypted packet with special marker for easy filtering
-        self._logger.info(
+        self._logger.debug(
             f"[CASAMBI_RAW_PACKET] Encrypted #{self._inPacketCount}: {b2a(raw_encrypted_packet)}"
         )
 
@@ -455,7 +474,7 @@ class CasambiClient:
         self._logger.debug(f"Incoming data of type {packetType}: {b2a(decrypted_data)}")
 
         # Log decrypted packet with special marker
-        self._logger.info(
+        self._logger.debug(
             f"[CASAMBI_DECRYPTED] Type={packetType} #{self._inPacketCount}: {b2a(decrypted_data)}"
         )
 
@@ -477,7 +496,7 @@ class CasambiClient:
 
     def _parseUnitStates(self, data: bytes) -> None:
         """Parse incoming unit states from notification data."""
-        self._logger.info("Parsing incoming unit states...")
+        self._logger.debug("Parsing incoming unit states...")
         self._logger.debug(f"Incoming unit state: {b2a(data)}")
 
         pos = 0
@@ -524,9 +543,12 @@ class CasambiClient:
         """Disconnect from the device."""
         self._logger.info("Disconnecting...")
 
-        if self._callbackTask is not None:
-            self._callbackTask.cancel()
-            self._callbackTask = None
+        # Mark the link as down before closing the transport so that _on_disconnect
+        # ignores the notification bleak also sends for an intentional disconnect.
+        wasAuthenticated = self._connectionState == ConnectionState.AUTHENTICATED
+        self._connectionState = ConnectionState.NONE
+
+        self._cancelCallbackTask()
 
         if self._connection is not None:
             try:
@@ -545,8 +567,7 @@ class CasambiClient:
             self._connection = None
 
         # Call disconnect callback if we were authenticated
-        if self._connectionState == ConnectionState.AUTHENTICATED:
+        if wasAuthenticated:
             self._disconnectedCallback()
 
-        self._connectionState = ConnectionState.NONE
         self._logger.info("Disconnected.")
