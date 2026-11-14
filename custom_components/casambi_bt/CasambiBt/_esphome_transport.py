@@ -6,7 +6,7 @@ running ESPHome with the bluetooth_proxy component.
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from typing import Any
 from uuid import UUID
 
@@ -21,7 +21,10 @@ _LOGGER = logging.getLogger(__name__)
 # Try to import aioesphomeapi, but make it optional
 try:
     import aioesphomeapi
-    from aioesphomeapi import BluetoothLERawAdvertisementsResponse
+    from aioesphomeapi import (
+        BluetoothLERawAdvertisementsResponse,
+        ESPHomeBluetoothGATTServices,
+    )
     from aioesphomeapi.client import APIClient
 
     ESPHOME_AVAILABLE = True
@@ -110,7 +113,7 @@ class ESPHomeTransport(BluetoothTransport):
     async def _get_api(self) -> APIClient:
         """Get or create the API client connection."""
         _LOGGER.debug(f"Getting API client for host={self._host}, port={self._port}")
-        if self._api is None or not self._api.is_connected:
+        if self._api is None or self._api.connected_address is None:
             _LOGGER.debug("Creating new API client connection")
             self._api = APIClient(
                 self._host,
@@ -123,7 +126,9 @@ class ESPHomeTransport(BluetoothTransport):
                 await self._api.connect()
                 _LOGGER.debug("Successfully connected to ESPHome")
             except Exception as e:
-                raise BluetoothError(f"Failed to connect to ESPHome at {self._host}:{self._port}: {e}") from e
+                raise BluetoothError(
+                    f"Failed to connect to ESPHome at {self._host}:{self._port}: {e}"
+                ) from e
         else:
             _LOGGER.debug("Reusing existing API client connection")
         return self._api
@@ -154,18 +159,26 @@ class ESPHomeTransport(BluetoothTransport):
                 )
 
                 # Check for Casambi devices: either service UUID or manufacturer data 963
-                is_casambi = CASA_UUID.lower() in [u.lower() for u in service_uuids] or 963 in manufacturer_data
+                is_casambi = (
+                    CASA_UUID.lower() in [u.lower() for u in service_uuids]
+                    or 963 in manufacturer_data
+                )
 
                 if is_casambi:
                     address = _int_to_mac(adv.address)
-                    network_address = _extract_network_address(manufacturer_data.get(963, b""))
+                    network_address = _extract_network_address(
+                        manufacturer_data.get(963, b"")
+                    )
                     key = network_address or address
                     if key not in discovered_devices:
                         discovered_devices[key] = BLEDevice(
                             address=address,
                             name="Casambi Network",
-                            details={"network_address": network_address} if network_address else {},
-                            rssi=adv.rssi,
+                            details=(
+                                {"network_address": network_address}
+                                if network_address
+                                else {}
+                            ),
                         )
                         _LOGGER.debug(
                             f"  => CASAMBI DEVICE ADDED to results: {address} "
@@ -183,9 +196,7 @@ class ESPHomeTransport(BluetoothTransport):
         # Enable active scanning
         try:
             _LOGGER.debug("Setting scanner mode to ACTIVE")
-            api.bluetooth_scanner_set_mode(
-                aioesphomeapi.BluetoothScannerMode.ACTIVE
-            )
+            api.bluetooth_scanner_set_mode(aioesphomeapi.BluetoothScannerMode.ACTIVE)
             _LOGGER.debug("Scanner mode set successfully")
         except Exception as e:
             _LOGGER.warning(f"Could not set scanner mode: {e}")
@@ -193,10 +204,12 @@ class ESPHomeTransport(BluetoothTransport):
         # Wait for advertisements
         _LOGGER.debug(f"Waiting {timeout}s for advertisements...")
         await asyncio.sleep(timeout)
-        _LOGGER.debug(f"Scan complete. Received {advertisement_count} advertisement(s), {len(discovered_devices)} Casambi device(s) found")
+        _LOGGER.debug(
+            f"Scan complete. Received {advertisement_count} advertisement(s), {len(discovered_devices)} Casambi device(s) found"
+        )
 
         # Clean up
-        if self._scan_subscription:
+        if self._scan_subscription is not None:
             _LOGGER.debug("Unsubscribing from advertisements")
             self._scan_subscription()
             self._scan_subscription = None
@@ -230,8 +243,12 @@ class ESPHomeTransportConnection(TransportConnection):
         self._device_address_int = self._mac_to_int(device_address)
         self._disconnected_callback = disconnected_callback
         self._is_connected = False
-        self._services: Any | None = None  # Cached services
-        self._notify_subscriptions: dict[int, tuple[Callable[[int, bytes], None], Callable[[], None]]] = {}
+        self._services: ESPHomeBluetoothGATTServices | None = None  # Cached services
+        # handle -> (stop_notify, remove_callback) as returned by
+        # APIClient.bluetooth_gatt_start_notify.
+        self._notify_subscriptions: dict[
+            int, tuple[Callable[[], Coroutine[Any, Any, None]], Callable[[], None]]
+        ] = {}
         self._logger = logging.getLogger(__name__)
 
     def _mac_to_int(self, mac: str) -> int:
@@ -270,12 +287,14 @@ class ESPHomeTransportConnection(TransportConnection):
                         self._disconnected_callback()
             else:
                 self._is_connected = False
-                _LOGGER.error(f"Connection failed to {self._device_address}, error={error}")
+                _LOGGER.error(
+                    f"Connection failed to {self._device_address}, error={error}"
+                )
             connection_complete.set()
 
         try:
             # Connect with a timeout
-            unsub = self._api.bluetooth_device_connect(
+            unsub = await self._api.bluetooth_device_connect(
                 self._device_address_int,
                 connection_callback,
             )
@@ -304,19 +323,20 @@ class ESPHomeTransportConnection(TransportConnection):
             self._is_connected = False
             try:
                 await self._api.bluetooth_device_disconnect(
-                    self._device_address_int,
-                    timeout=10.0
+                    self._device_address_int, timeout=10.0
                 )
             except Exception as e:
                 _LOGGER.error(f"Error disconnecting: {e}")
 
         # Clean up connection subscription
-        if hasattr(self, '_connection_unsub'):
+        if hasattr(self, "_connection_unsub"):
             self._connection_unsub()
 
-        # Clean up notifications
-        for _handle, (_callback, unsub) in list(self._notify_subscriptions.items()):
-            unsub()
+        # Clean up notifications (the link is down: only drop the local callbacks)
+        for _handle, (_stop, remove_callback) in list(
+            self._notify_subscriptions.items()
+        ):
+            remove_callback()
         self._notify_subscriptions.clear()
 
     async def read_gatt_char(self, char_uuid: str) -> bytes:
@@ -342,7 +362,9 @@ class ESPHomeTransportConnection(TransportConnection):
             )
             return bytes(data)
         except Exception as e:
-            raise BluetoothError(f"Failed to read characteristic {char_uuid}: {e}") from e
+            raise BluetoothError(
+                f"Failed to read characteristic {char_uuid}: {e}"
+            ) from e
 
     async def write_gatt_char(self, char_uuid: str, data: bytes) -> None:
         """Write to a GATT characteristic by UUID."""
@@ -368,7 +390,9 @@ class ESPHomeTransportConnection(TransportConnection):
                 timeout=10.0,
             )
         except Exception as e:
-            raise BluetoothError(f"Failed to write characteristic {char_uuid}: {e}") from e
+            raise BluetoothError(
+                f"Failed to write characteristic {char_uuid}: {e}"
+            ) from e
 
     async def start_notify(
         self, char_uuid: str, callback: Callable[[bytes], None]
@@ -393,16 +417,17 @@ class ESPHomeTransportConnection(TransportConnection):
 
         # Start notification
         try:
-            unsub_sync = self._api.bluetooth_gatt_start_notify(
+            stop, remove_callback = await self._api.bluetooth_gatt_start_notify(
                 self._device_address_int,
                 handle,
                 notify_handler,
             )
 
-            # For ESPHome, the unsubscribe is synchronous
-            self._notify_subscriptions[handle] = (callback, unsub_sync)
+            self._notify_subscriptions[handle] = (stop, remove_callback)
         except Exception as e:
-            raise BluetoothError(f"Failed to start notifications for {char_uuid}: {e}") from e
+            raise BluetoothError(
+                f"Failed to start notifications for {char_uuid}: {e}"
+            ) from e
 
     async def stop_notify(self, char_uuid: str) -> None:
         """Stop notifications on a GATT characteristic."""
@@ -422,9 +447,9 @@ class ESPHomeTransportConnection(TransportConnection):
 
         # Stop notification
         if handle in self._notify_subscriptions:
-            callback, unsub = self._notify_subscriptions.pop(handle)
+            stop, _remove_callback = self._notify_subscriptions.pop(handle)
             try:
-                unsub()
+                await stop()
             except Exception as e:
                 _LOGGER.warning(f"Error stopping notification: {e}")
 
@@ -433,19 +458,21 @@ class ESPHomeTransportConnection(TransportConnection):
         if self._services is None:
             return None
 
-        # Convert UUID to integer format (ESPHome uses integer UUIDs)
+        # Compare UUIDs as integers so case and hyphens don't matter
         uuid_int = self._uuid_to_int(uuid)
 
-        # Search through services and characteristics
+        # Search through services and characteristics (aioesphomeapi reports
+        # UUIDs as strings; descriptors hang off characteristics)
         for service in self._services.services:
             if is_characteristic:
                 for char in service.characteristics:
-                    if char.uuid == uuid_int:
+                    if self._uuid_to_int(char.uuid) == uuid_int:
                         return char.handle
             else:
-                for descriptor in service.descriptors:
-                    if descriptor.uuid == uuid_int:
-                        return descriptor.handle
+                for char in service.characteristics:
+                    for descriptor in char.descriptors:
+                        if self._uuid_to_int(descriptor.uuid) == uuid_int:
+                            return descriptor.handle
 
         return None
 
