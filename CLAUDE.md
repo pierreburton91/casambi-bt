@@ -4,16 +4,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-CasambiBt is an alpha-quality Python library for controlling Casambi-based Bluetooth lighting/shade/sensor networks directly over BLE, without a gateway or the official Casambi cloud API. The protocol implementation is based on independent reverse engineering. `demo/` contains a Quart-based web app that exercises the library.
+This repository is a **custom Home Assistant integration** (`custom_components/casambi_bt/`, domain `casambi_bt`, installed through HACS from `main`) that controls Casambi networks over Bluetooth Low Energy. It was built for a motorized pergola (louvers, screen, lights, wind/rain/sun/illuminance/presence sensors) but stays device-agnostic.
+
+It embeds a **modified copy of the `casambi-bt` library** by Lukas Kempf (Apache 2.0, forked from 0.3.2) in `custom_components/casambi_bt/CasambiBt/`. The protocol support is alpha quality and based on independent reverse engineering. `demo/` (Quart web app) and `demo.py` drive the library directly, without Home Assistant, and are kept as diagnostic tools.
 
 ## Repository layout
 
-The library has a single source of truth: `custom_components/casambi_bt/CasambiBt/`, vendored inside the Home Assistant integration (`custom_components/casambi_bt/`, domain `casambi_bt`) that HACS installs. There is no `src/` copy any more — edit the library in place there.
+- `custom_components/casambi_bt/` — the integration; the only part HACS ships.
+- `custom_components/casambi_bt/CasambiBt/` — the embedded library, single source of truth. There is no `src/` copy: edit it in place.
+- `tests/` — library tests; `tests/casambi_bt_ha/` — integration tests that run without `homeassistant` installed.
+- `doc/fixtures-specs/` — JSON control layouts of real units (louvers, screens, sensors) used as test fixtures.
+- `demo/`, `demo.py`, `examples/` — standalone uses of the library.
+- `LICENSE` (Apache 2.0), `NOTICE` (credit to the original library and summary of changes).
+
+How the library is imported:
 
 - The integration imports it relatively (`from .CasambiBt import ...`).
 - Everything else (`tests/`, `demo/`, `demo.py`, `examples/`) imports it as the top-level package `CasambiBt`. That works because `setup.cfg` sets `package_dir` to `custom_components/casambi_bt` (editable install from the Pipfile) and `tests/conftest.py` also puts that directory on `sys.path`.
 - `mypy.ini` excludes only the integration's own top-level modules (they import `homeassistant`, not installed here), sets `mypy_path`/`explicit_package_bases` so the library is checked as `CasambiBt`, and skips `custom_components.*` imports (used by `tests/casambi_bt_ha/`) to avoid mypy seeing the same file under two module names.
 - `pyproject.toml` declares `CasambiBt` as isort `known_first_party`.
+
+## Licensing rules
+
+- Keep `LICENSE` and the credit to Lukas Kempf (README, `NOTICE`).
+- Apache 2.0 section 4(b): when you change a library file that still has no `# Modified by` header (`_constants.py`, `_keystore.py`, `_switch.py` at the time of writing), add the same three-line header as the other modified files and move it from "Unchanged files" to "Modified files" in `NOTICE`. Keep the "Main changes" list in `NOTICE` up to date for significant library changes.
+
+## Home Assistant integration
+
+- `__init__.py` — creates a `CasambiBtCoordinator` per config entry, registers the network device, forwards to the platforms in `const.PLATFORMS` (light, cover, sensor, binary_sensor).
+- `coordinator.py` — owns the `Casambi` instance (cache under HA's `.storage/casambi_bt`). Connects through HA's Bluetooth stack (`bluetooth.async_ble_device_from_address`, so local adapters and ESPHome proxies both work; the library's own `_esphome_transport.py` is not used here). The library does no reconnection, so the coordinator does: on disconnect it runs a backoff loop (`RECONNECT_*` in `const.py`). On first setup it raises `ConfigEntryAuthFailed` for a wrong password (reauth flow) and `ConfigEntryNotReady` for transient BLE/cloud errors and timeouts, so HA retries. Library calls are bounded by `CONNECT_TIMEOUT`/`OPERATION_TIMEOUT`, since the library has no internal timeouts.
+- `config_flow.py` — Bluetooth discovery, manual pick among discovered units, password step, reauth. The entry is keyed on a single unit's address (`CONF_ADDRESS`).
+- `entity.py` + platform modules — thin HA wrappers; the unit → entity mapping logic lives in `_logic.py`, which has no `homeassistant` import so it can be unit-tested.
+- Delivery: bump `version` in `manifest.json` for every change shipped to HA. HACS follows `main` (no GitHub releases); users must fully restart HA after updating, a reload does not load new Python code.
 
 ## Development environment
 
@@ -47,7 +69,7 @@ pipenv run pytest tests/test_device_types.py::test_name # single test
 
 Tests live in `tests/` and use plain pytest (`testpaths = ["tests"]`, `python_files = test_*.py` per `pyproject.toml`). `tests/conftest.py` manually inserts `custom_components/casambi_bt/` onto `sys.path` rather than relying on the editable install. `tests/casambi_bt_ha/` covers the HA integration without installing `homeassistant`: it loads `_logic.py` directly and stubs the HA modules (see its `conftest.py` and `test_coordinator_setup.py`). Some tests (`test_device_types.py`) build fixtures from JSON specs in `doc/fixtures-specs/` describing real device control layouts (louvers, screens, sensors) — use these when adding coverage for a new device type instead of hand-rolling `UnitType`/`UnitControl` objects.
 
-CI (`.github/workflows/lint.yml`) runs on Python 3.11–3.14 via pipenv and gates on isort, black, ruff, and mypy — run all four before considering a change done.
+CI (`.github/workflows/lint.yml`) runs on Python 3.11–3.14 via pipenv and gates on isort, black, ruff, and mypy — run all four, plus `pytest -W error` (not run in CI), before considering a change done.
 
 ### Running the demo
 
@@ -57,7 +79,7 @@ python demo/web_app.py   # Quart app on http://0.0.0.0:5000
 
 `demo.py` at the repo root is a minimal scripted example (connect, list units, set a level) — read it first when you need a quick end-to-end usage reference.
 
-## Architecture
+## Library architecture (`custom_components/casambi_bt/CasambiBt/`)
 
 ### Transport abstraction
 

@@ -1,38 +1,21 @@
-![PyPI](https://img.shields.io/pypi/v/casambi-bt)
-[![Discord](https://img.shields.io/discord/1186445089317326888)](https://discord.gg/jgZVugfx)
+# CasambiBt (embedded, modified)
 
-# A bluetooth based Python library for controlling Casambi networks
+This directory is a modified copy of the [`casambi-bt`](https://github.com/lkempf/casambi-bt)
+Python library by Lukas Kempf (Copyright 2022, Apache License 2.0), starting from
+version 0.3.2. It is embedded in the Home Assistant integration one level up and
+is not published to PyPI: it is not guaranteed to stay compatible with the
+upstream `casambi-bt` package. See [NOTICE](../../../NOTICE) for the list of
+changes; each file changed from the original carries a "Modified by" header.
 
-This library provides a currently **alpha quality** interface to Casambi-based lights over Bluetooth.
-The author is not associated with Casambi and the implementation is based on his own analysis of the protocol.
-This interface is not feature complete and was only tested with a very small network.
+The library talks to Casambi networks over Bluetooth Low Energy. Its protocol
+support comes from independent reverse engineering by the original author; it is
+**alpha quality** and not affiliated with Casambi.
 
-If you want to check out my (slow) progress in writing a integration for Home Assistant using this library you can take a look at [https://github.com/lkempf/casambi-bt-hass/](https://github.com/lkempf/casambi-bt-hass/).
+## Using it outside Home Assistant
 
-For a more mature solution using a gateway and the official Casambi API have a look at [https://github.com/hellqvio86/aiocasambi](https://github.com/hellqvio86/aiocasambi).
-
-## Getting started
-
-This library is available on PyPi:
-
-```
-pip install casambi-bt
-```
-
-For specific Bluetooth backends, install the appropriate optional dependency:
-
-```bash
-# For ESPHome Bluetooth Proxy
-pip install casambi-bt[esphome]
-
-# For Home Assistant integration (validates against HA, then connects to an ESPHome proxy)
-pip install casambi-bt[homeassistant]
-
-# For all optional dependencies
-pip install casambi-bt[esphome,homeassistant]
-```
-
-Have a look at `demo.py` for a small example.
+For development, the repository installs it in editable mode as the top-level
+package `CasambiBt` (`pipenv install --dev` at the repository root). The demo web
+app (`demo/`) and `demo.py` use it that way.
 
 ### Bluetooth Transports
 
@@ -94,7 +77,7 @@ If you're running into problems fetching the MAC address on MacOS, try it on a R
 
 ### Casambi network setup
 
-If you have problems connecting to the network please check that your network is configured appropriately before creating an issue. The network I test this with uses the **Evoultion firmware** and is configured as follows (screenshots are for the iOS app but the Android app should look very similar):
+If you have problems connecting to the network, check how the network is configured. The original author tested with a network using the **Evolution firmware**, configured as follows (screenshots are for the iOS app but the Android app should look very similar):
 
 ![Gateway settings](/doc/img/gateway.png)
 ![Network settings](/doc/img/network.png)

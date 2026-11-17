@@ -1,3 +1,6 @@
+# Modified by Pierre Burton (2026) from casambi-bt 0.3.2 by Lukas Kempf
+# (https://github.com/lkempf/casambi-bt), Apache License 2.0.
+# See NOTICE at the repository root for a summary of the changes.
 import asyncio
 import copy
 import logging

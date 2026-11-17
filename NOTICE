@@ -1,0 +1,42 @@
+Casambi Bluetooth for Home Assistant
+Copyright 2026 Pierre Burton
+
+This product includes a modified copy of casambi-bt
+(https://github.com/lkempf/casambi-bt), version 0.3.2,
+Copyright 2022 Lukas Kempf, licensed under the Apache License, Version 2.0.
+The full license text is in the LICENSE file.
+
+The modified library lives in custom_components/casambi_bt/CasambiBt/.
+Every file changed from the original carries a "Modified by" header.
+Files added in this repository have no such header.
+
+Summary of changes to the original library
+------------------------------------------
+
+Modified files: __init__.py, _cache.py, _casambi.py, _client.py,
+_discover.py, _encryption.py, _network.py, _operation.py, _unit.py, errors.py.
+
+Added files: _transport.py, _transport_factory.py, _bleak_transport.py,
+_esphome_transport.py, _homeassistant_transport.py, README.md.
+
+Unchanged files: _constants.py, _keystore.py, _switch.py, py.typed.
+
+Main changes:
+- Device roles (light, motorized shade, motorized screen, sensor) inferred
+  from each unit's controls, and a generic setControl() write API.
+- On/off support for motorized shades and screens, and slider scaling that
+  honours each control's min/max.
+- Decoding of sensor controls (presence, illuminance and the round-robin
+  sensor group), with read-only controls rejected on write.
+- A Bluetooth transport abstraction (local bleak adapter, ESPHome proxy,
+  Home Assistant).
+- Disconnect detection restored so lost BLE links are reported, and
+  per-packet logs moved from INFO to DEBUG.
+- Typing, lint and test fixes.
+
+The Home Assistant integration itself (the other files under
+custom_components/casambi_bt/), the demo web app (demo/) and the tests
+were written in this repository.
+
+The full history of changes is in the Git log of
+https://github.com/pierreburton91/casambi-bt.
