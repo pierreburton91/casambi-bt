@@ -57,7 +57,7 @@ are now done, verified directly against the code:
 ## 🚨 OPEN — Correctness / API-surface
 
 ### 1. `Group.groudId` typo has no alias, contradicts its own docstring
-**Location:** `src/CasambiBt/_unit.py:808,813`, `src/CasambiBt/_casambi.py:496-497`
+**Location:** `custom_components/casambi_bt/CasambiBt/_unit.py:808,813`, `custom_components/casambi_bt/CasambiBt/_casambi.py:496-497`
 
 The field is still spelled `groudId`, but the docstring right above it says
 `:ivar groupId:`. `Casambi._send()` reads `target.groudId` directly. There is
@@ -67,7 +67,7 @@ property alias for anyone who already read the docstring and typed the
 "correct" name.
 
 ### 2. Error types not exported from the package root
-**Location:** `src/CasambiBt/__init__.py:33-48`
+**Location:** `custom_components/casambi_bt/CasambiBt/__init__.py:33-48`
 
 `errors.py` defines `CasambiBtError` and 8 subclasses (`NetworkNotFoundError`,
 `ConnectionStateError`, `ReadOnlyControlError`, etc.), none of which appear
@@ -76,7 +76,7 @@ they have to reach into `CasambiBt.errors` directly, which isn't documented
 anywhere as the intended import path.
 
 ### 3. `Unit` state mutation still bypasses encapsulation internally
-**Location:** `src/CasambiBt/_unit.py:487-510`, `src/CasambiBt/_casambi.py:535-536,657`
+**Location:** `custom_components/casambi_bt/CasambiBt/_unit.py:487-510`, `custom_components/casambi_bt/CasambiBt/_casambi.py:535-536,657`
 
 `_state`/`_on`/`_online` gained read-only `@property` getters, but the
 underlying fields are still plain mutable attributes, and `_casambi.py`
@@ -91,7 +91,7 @@ library itself uses, or drop the pretense of encapsulation.
 ## ⚠️ OPEN — Robustness
 
 ### 4. Unbounded packet logging at INFO level
-**Location:** `src/CasambiBt/_client.py:442-444` (raw encrypted packet hex),
+**Location:** `custom_components/casambi_bt/CasambiBt/_client.py:442-444` (raw encrypted packet hex),
 `:459-461` (decrypted payload hex)
 
 Every inbound packet is still logged at `INFO` with a full hex dump of both
@@ -101,7 +101,7 @@ plaintext logs. Move to `DEBUG` (or add rate limiting) as originally
 planned.
 
 ### 5. No timeout on BLE protocol operations
-**Location:** `src/CasambiBt/_client.py`
+**Location:** `custom_components/casambi_bt/CasambiBt/_client.py`
 
 `exchangeKey()`, `authenticate()`, and `send()` have no `asyncio.wait_for` or
 equivalent around their awaits. A device that stops responding mid-handshake
@@ -111,7 +111,7 @@ does get retry/backoff for free via `bleak-retry-connector`
 help once a session is established and a specific request stalls.
 
 ### 6. Callback lists have no automatic lifecycle management
-**Location:** `src/CasambiBt/_casambi.py:40-42,571-639`
+**Location:** `custom_components/casambi_bt/CasambiBt/_casambi.py:40-42,571-639`
 
 `registerUnitChangedHandler`/`registerSwitchEventHandler`/
 `registerDisconnectCallback` each have a matching `unregister*` method, so
@@ -123,7 +123,7 @@ a manual escape hatch exists; worth a `weakref.WeakMethod` option if this
 becomes a real-world pain point rather than a theoretical one.
 
 ### 7. Cache invalidation is all-or-nothing
-**Location:** `src/CasambiBt/_cache.py:14,42-70`
+**Location:** `custom_components/casambi_bt/CasambiBt/_cache.py:14,42-70`
 
 `CACHE_VERSION` is now `3` (bumped during the sensor-platform work), and a
 version bump still deletes the entire cache directory
@@ -141,9 +141,9 @@ four fail locally:
 - `isort --check-only .` → 6 files misordered (`tests/conftest.py`,
   `tests/test_integration_devices.py`, `tests/test_slider_minmax.py`,
   `tests/test_device_types.py`, `tests/test_sensor_commands.py`,
-  `src/CasambiBt/_casambi.py`)
+  `custom_components/casambi_bt/CasambiBt/_casambi.py`)
 - `black --check .` → 16 files would be reformatted, incl.
-  `demo/web_app.py`, `src/CasambiBt/_unit.py`
+  `demo/web_app.py`, `custom_components/casambi_bt/CasambiBt/_unit.py`
 - `mypy .` → 63 errors in 10 files, including real bugs, not just missing
   annotations: `_encryption.py` bytearray/bytes mismatches, `arg-type`
   errors on `get_transport_by_type` calls in `demo/web_app.py:349,403`
@@ -155,7 +155,7 @@ Run `pipenv run isort . && pipenv run black .` for the easy wins, then
 triage the ruff/mypy findings — some are real type bugs, not just style.
 
 ### 9. Retry logic is inconsistent across layers
-**Location:** `src/CasambiBt/_network.py`, `_client.py`
+**Location:** `custom_components/casambi_bt/CasambiBt/_network.py`, `_client.py`
 
 BLE connection establishment retries via `bleak-retry-connector`. Nothing
 else does: `_network.py` raises `NetworkUpdateError` on a bad HTTP status
@@ -165,8 +165,8 @@ aren't retried either.
 
 ### 10. Silent handling of unrecognized protocol data
 **Locations:**
-- `src/CasambiBt/_client.py:476-477` — unknown packet type → `logger.info`
-- `src/CasambiBt/_switch.py:158` — unknown switch message type → `logger.info`
+- `custom_components/casambi_bt/CasambiBt/_client.py:476-477` — unknown packet type → `logger.info`
+- `custom_components/casambi_bt/CasambiBt/_switch.py:158` — unknown switch message type → `logger.info`
 
 Both still log at INFO rather than something that would actually surface in
 default deployments (WARNING) or get filtered out in normal operation
@@ -196,17 +196,17 @@ three whole modules have zero direct test references.
 
 ### 13. Current TODOs in source
 ```
-src/CasambiBt/_casambi.py:156
-src/CasambiBt/_client.py:177,375,385,435,498,500
-src/CasambiBt/_encryption.py:79
-src/CasambiBt/_network.py:34,54,188,260,319
-src/CasambiBt/_operation.py:31
-src/CasambiBt/_switch.py:18,19
-src/CasambiBt/_unit.py:209,210,464,512,522,675,686,736
+custom_components/casambi_bt/CasambiBt/_casambi.py:156
+custom_components/casambi_bt/CasambiBt/_client.py:177,375,385,435,498,500
+custom_components/casambi_bt/CasambiBt/_encryption.py:79
+custom_components/casambi_bt/CasambiBt/_network.py:34,54,188,260,319
+custom_components/casambi_bt/CasambiBt/_operation.py:31
+custom_components/casambi_bt/CasambiBt/_switch.py:18,19
+custom_components/casambi_bt/CasambiBt/_unit.py:209,210,464,512,522,675,686,736
 ```
 `_unit.py:464` is the still-unresolved "make unit immutable" TODO tied to
 item 3 above. Line numbers drift with every feature commit — re-grep
-(`grep -rn TODO src/`) before trusting this list rather than assuming it's
+(`grep -rn TODO custom_components/casambi_bt/CasambiBt/`) before trusting this list rather than assuming it's
 current.
 
 ### 14. Cosmetic: sensor group value rendered as binary in the UI

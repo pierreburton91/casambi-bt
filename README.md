@@ -10,9 +10,8 @@ Bluetooth integrations and Bluetooth proxies.
 
 ### HACS (custom repository)
 
-Add this repository to HACS as a custom repository of type "Integration", pointed
-at the `src/casambi-bt-ha` subfolder, then install "Casambi Bluetooth" and restart
-Home Assistant.
+Add this repository to HACS as a custom repository of type "Integration", then
+install "Casambi Bluetooth" and restart Home Assistant.
 
 ### Manual
 

@@ -1,7 +1,7 @@
 """Framework-agnostic helpers mapping CasambiBt units/controls onto HA entities.
 
 Deliberately free of any `homeassistant` import so it can be unit-tested without
-installing Home Assistant as a dependency (see src/casambi-bt-ha/tests/). Platform
+installing Home Assistant as a dependency (see tests/casambi_bt_ha/). Platform
 modules (light.py, cover.py, sensor.py, binary_sensor.py) import from here rather
 than duplicating this logic inline.
 """

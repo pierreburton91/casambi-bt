@@ -6,6 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 CasambiBt is an alpha-quality Python library for controlling Casambi-based Bluetooth lighting/shade/sensor networks directly over BLE, without a gateway or the official Casambi cloud API. The protocol implementation is based on independent reverse engineering. `demo/` contains a Quart-based web app that exercises the library.
 
+## Repository layout
+
+The library has a single source of truth: `custom_components/casambi_bt/CasambiBt/`, vendored inside the Home Assistant integration (`custom_components/casambi_bt/`, domain `casambi_bt`) that HACS installs. There is no `src/` copy any more — edit the library in place there.
+
+- The integration imports it relatively (`from .CasambiBt import ...`).
+- Everything else (`tests/`, `demo/`, `demo.py`, `examples/`) imports it as the top-level package `CasambiBt`. That works because `setup.cfg` sets `package_dir` to `custom_components/casambi_bt` (editable install from the Pipfile) and `tests/conftest.py` also puts that directory on `sys.path`.
+- `mypy.ini` excludes only the integration's own top-level modules (they import `homeassistant`, not installed here), sets `mypy_path`/`explicit_package_bases` so the library is checked as `CasambiBt`, and skips `custom_components.*` imports (used by `tests/casambi_bt_ha/`) to avoid mypy seeing the same file under two module names.
+- `pyproject.toml` declares `CasambiBt` as isort `known_first_party`.
+
 ## Development environment
 
 Dependencies are managed with Pipenv (`Pipfile`); package metadata lives in `setup.cfg`, with `pyproject.toml` holding tool config (ruff, isort, pytest) and optional extras.
@@ -36,7 +45,7 @@ pipenv run pytest tests/test_device_types.py            # single file
 pipenv run pytest tests/test_device_types.py::test_name # single test
 ```
 
-Tests live in `tests/` and use plain pytest (`testpaths = ["tests"]`, `python_files = test_*.py` per `pyproject.toml`). `tests/conftest.py` manually inserts `src/` onto `sys.path` rather than relying on an editable install. Some tests (`test_device_types.py`) build fixtures from JSON specs in `doc/fixtures-specs/` describing real device control layouts (louvers, screens, sensors) — use these when adding coverage for a new device type instead of hand-rolling `UnitType`/`UnitControl` objects.
+Tests live in `tests/` and use plain pytest (`testpaths = ["tests"]`, `python_files = test_*.py` per `pyproject.toml`). `tests/conftest.py` manually inserts `custom_components/casambi_bt/` onto `sys.path` rather than relying on the editable install. `tests/casambi_bt_ha/` covers the HA integration without installing `homeassistant`: it loads `_logic.py` directly and stubs the HA modules (see its `conftest.py` and `test_coordinator_setup.py`). Some tests (`test_device_types.py`) build fixtures from JSON specs in `doc/fixtures-specs/` describing real device control layouts (louvers, screens, sensors) — use these when adding coverage for a new device type instead of hand-rolling `UnitType`/`UnitControl` objects.
 
 CI (`.github/workflows/lint.yml`) runs on Python 3.11–3.14 via pipenv and gates on isort, black, ruff, and mypy — run all four before considering a change done.
 
@@ -62,7 +71,7 @@ BLE access is behind the `BluetoothTransport` / `TransportConnection` ABCs in `_
 - `get_transport()` auto-selects based on env vars (`ESPHOME_IP`/`ESPHOME_PORT`/`ESPHOME_NOISE_PSK`), falling back to bleak if the optional dependency isn't installed.
 - `get_transport_by_type(transport_type, **kwargs)` builds a specific transport explicitly; raises `ImportError` if the extra isn't installed and `ValueError` for missing required config.
 
-Optional transports are imported lazily inside functions (not at module top-level) so the base package works without `aioesphomeapi`/`homeassistant-api` installed. `src/CasambiBt/__init__.py` mirrors this: it tries to import `HomeAssistantTransport` and only adds it to `__all__` if the import succeeds — follow this pattern for any new optional transport.
+Optional transports are imported lazily inside functions (not at module top-level) so the base package works without `aioesphomeapi`/`homeassistant-api` installed. `custom_components/casambi_bt/CasambiBt/__init__.py` mirrors this: it tries to import `HomeAssistantTransport` and only adds it to `__all__` if the import succeeds — follow this pattern for any new optional transport.
 
 ### Core layers (independent of transport)
 

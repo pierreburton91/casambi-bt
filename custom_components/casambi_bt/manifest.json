@@ -4,10 +4,10 @@
   "codeowners": [],
   "config_flow": true,
   "dependencies": ["bluetooth"],
-  "documentation": "https://github.com/lkempf/casambi-bt/tree/main/src/casambi-bt-ha",
+  "documentation": "https://github.com/pierreburton91/casambi-bt",
   "integration_type": "hub",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/lkempf/casambi-bt/issues",
+  "issue_tracker": "https://github.com/pierreburton91/casambi-bt/issues",
   "requirements": [
     "bleak>=2.1.0",
     "cryptography>=40.0.0",
@@ -18,5 +18,5 @@
   "bluetooth": [
     { "service_uuid": "0000fe4d-0000-1000-8000-00805f9b34fb" }
   ],
-  "version": "0.1.2"
+  "version": "0.1.3"
 }
